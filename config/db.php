@@ -1,6 +1,6 @@
 <?php
 $host = "localhost";
-$dbname = "diawell"; // Replace with your database name
+$dbname = "diawell";
 $username = "root";
 $password = "";
 
@@ -15,6 +15,14 @@ try {
         ]
     );
 } catch (PDOException $e) {
-    error_log($e->getMessage());
-    exit("Database connection failed.");
+    error_log("Database connection error: " . $e->getMessage());
+    if (!headers_sent()) {
+        header("Content-Type: application/json; charset=UTF-8");
+        http_response_code(500);
+    }
+    echo json_encode([
+        "success" => false,
+        "message" => "Database connection failed. Please ensure MySQL is running in XAMPP."
+    ]);
+    exit;
 }

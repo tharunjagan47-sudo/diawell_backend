@@ -1,0 +1,290 @@
+{
+  "info": {
+    "name": "DiaWell - Auth & Profile APIs",
+    "description": "Comprehensive Postman collection for DiaWell Authentication and Profile screens, aligned with the Android Jetpack Compose UI.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost/DiaWell_backend",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "8",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "1.1 Sign Up (SignUpScreen)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Mary Jane\",\n  \"email\": \"mary.jane@example.com\",\n  \"password\": \"Password123@\",\n  \"confirm_password\": \"Password123@\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/signup.php",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "signup.php"]
+            },
+            "description": "Matches SignUpScreen.kt. Registers a new patient user."
+          }
+        },
+        {
+          "name": "1.2 Login (LoginScreen)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mary.jane@example.com\",\n  \"password\": \"Password123@\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login.php",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login.php"]
+            },
+            "description": "Matches LoginScreen.kt. Verifies credentials and returns full user profile state."
+          }
+        },
+        {
+          "name": "1.3 Forgot / Reset Password (ForgotPasswordScreen)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mary.jane@example.com\",\n  \"new_password\": \"NewPassword123@\",\n  \"confirm_new_password\": \"NewPassword123@\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/forgotpassword.php",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "forgotpassword.php"]
+            },
+            "description": "Matches ForgotPasswordScreen.kt. Resets user password by registered email."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Onboarding Profile",
+      "item": [
+        {
+          "name": "2.1 Save Patient Details (Step 1 - PatientProfileScreen)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{user_id}},\n  \"diabetes_type\": \"Type 2\",\n  \"age\": 30,\n  \"height_cm\": 165,\n  \"weight_kg\": 68,\n  \"current_glucose_mg_dl\": 128,\n  \"target_glucose_mg_dl\": 120\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/patientdetails.php",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "patientdetails.php"]
+            },
+            "description": "Matches PatientProfileScreen.kt (Step 1 of 2). Saves diabetes type, age, height, weight, and glucose target readings."
+          }
+        },
+        {
+          "name": "2.2 Get Patient Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/auth/patientdetails.php?user_id={{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "patientdetails.php"],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{user_id}}"
+                }
+              ]
+            },
+            "description": "Fetches medical/patient details for the specified user."
+          }
+        },
+        {
+          "name": "2.3 Save Health Preferences (Step 2 - HealthPreferencesScreen)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{user_id}},\n  \"health_focus\": \"Glucose Control\",\n  \"dietary_preferences\": [\n    \"Non-Vegetarian\",\n    \"Low-Carb / Keto\"\n  ],\n  \"allergies\": [\n    \"Nuts\"\n  ],\n  \"activity_level\": \"Moderate (3-5 days/week)\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/healthpreferences.php",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "healthpreferences.php"]
+            },
+            "description": "Matches HealthPreferencesScreen.kt (Step 2 of 2). Saves Primary Health Focus, Dietary Restrictions, Allergies, and Activity Level."
+          }
+        },
+        {
+          "name": "2.4 Get Health Preferences",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/auth/healthpreferences.php?user_id={{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "healthpreferences.php"],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{user_id}}"
+                }
+              ]
+            },
+            "description": "Fetches saved health and lifestyle preferences for the specified user."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Profile & Settings",
+      "item": [
+        {
+          "name": "3.1 Edit Personal Profile (EditProfileScreen)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{user_id}},\n  \"full_name\": \"Mary Jane Watson\",\n  \"email\": \"mary.jane@example.com\",\n  \"diabetes_type\": \"Type 2\",\n  \"age\": 30,\n  \"height_cm\": 165,\n  \"weight_kg\": 68\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/editprofile.php",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "editprofile.php"]
+            },
+            "description": "Matches EditProfileScreen.kt. Updates user's name, email, diabetes type, age, height, and weight."
+          }
+        },
+        {
+          "name": "3.2 Upload Profile Photo (EditProfileScreen)",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "user_id",
+                  "value": "{{user_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "profile_photo",
+                  "type": "file",
+                  "description": "Select any JPG, PNG, or WEBP image (Max 5MB)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/uploadprofile.php",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "uploadprofile.php"]
+            },
+            "description": "Uploads profile photo and returns full photo URL and path."
+          }
+        },
+        {
+          "name": "3.3 Get Full User Profile",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/auth/uploadprofile.php?user_id={{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "uploadprofile.php"],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{user_id}}"
+                }
+              ]
+            },
+            "description": "Fetches complete user profile including medical details, photo URL, health preferences, and food preferences."
+          }
+        },
+        {
+          "name": "3.4 Save Food Preferences (FoodPreferencesSettingsScreen)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{user_id}},\n  \"preferred_diet\": \"Non-Vegetarian\",\n  \"allergies\": [\n    \"Nuts\",\n    \"Milk\"\n  ],\n  \"preferred_styles\": [\n    \"Whole grains\",\n    \"Vegetables\",\n    \"Fish\",\n    \"Poultry\"\n  ],\n  \"foods_to_avoid\": \"Avoid high fructose corn syrup and processed snacks\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/foodpreferences.php",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "foodpreferences.php"]
+            },
+            "description": "Matches FoodPreferencesSettingsScreen.kt. Saves Preferred Diet (Vegetarian/Non-Vegetarian/Vegan), Allergies, Preferred Styles, and Foods to Avoid."
+          }
+        },
+        {
+          "name": "3.5 Get Food Preferences",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/auth/foodpreferences.php?user_id={{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "foodpreferences.php"],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{user_id}}"
+                }
+              ]
+            },
+            "description": "Fetches saved food preferences settings for the specified user."
+          }
+        }
+      ]
+    }
+  ]
+}
+
