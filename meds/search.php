@@ -159,43 +159,68 @@ try {
                    dosage_form, therapeutic_class, manufacturer, packaging_raw, price_inr
             FROM medicines
             WHERE product_id IN ($idList) OR LOWER(therapeutic_class) = 'antidiabetic'
-            LIMIT 20
+            LIMIT 25
         ");
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
-        // Clean query for FTS5 (keep alphanumeric and spaces)
-        $cleanTerm = trim(preg_replace('/[^a-zA-Z0-9\s]/', '', $rawQuery));
+        // Tokenize query words
+        $clean = trim(preg_replace('/[^a-zA-Z0-9\s]/', ' ', $rawQuery));
+        $words = array_values(array_filter(explode(' ', $clean)));
 
-        if (strlen($cleanTerm) >= 2) {
-            $ftsTerm = $cleanTerm . '*';
-            $stmt = $sqlite->prepare("
-                SELECT m.product_id, m.brand_name, m.primary_ingredient, m.primary_strength, 
-                       m.dosage_form, m.therapeutic_class, m.manufacturer, m.packaging_raw, m.price_inr
-                FROM medicines_fts f
-                JOIN medicines m ON m.product_id = f.rowid
-                WHERE medicines_fts MATCH :term
-                ORDER BY rank
-                LIMIT 30
-            ");
-            $stmt->execute([":term" => $ftsTerm]);
-            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        }
+        if (!empty($words)) {
+            // 1. Try FTS5 with all tokens starred
+            try {
+                $ftsParts = [];
+                foreach ($words as $w) {
+                    $cleanWord = trim($w);
+                    if ($cleanWord !== "") {
+                        $ftsParts[] = '"' . $cleanWord . '"*';
+                    }
+                }
+                if (!empty($ftsParts)) {
+                    $ftsQuery = implode(' ', $ftsParts);
+                    $stmt = $sqlite->prepare("
+                        SELECT m.product_id, m.brand_name, m.primary_ingredient, m.primary_strength, 
+                               m.dosage_form, m.therapeutic_class, m.manufacturer, m.packaging_raw, m.price_inr
+                        FROM medicines_fts f
+                        JOIN medicines m ON m.product_id = f.rowid
+                        WHERE medicines_fts MATCH :term
+                        ORDER BY 
+                            CASE WHEN LOWER(m.therapeutic_class) = 'antidiabetic' THEN 0 ELSE 1 END,
+                            rank
+                        LIMIT 35
+                    ");
+                    $stmt->execute([":term" => $ftsQuery]);
+                    $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                }
+            } catch (Exception $ftsEx) {
+                // If FTS encounters syntax nuance, fallback seamlessly
+                $results = [];
+            }
 
-        // Fallback to LIKE if FTS returned empty
-        if (empty($results)) {
-            $likeTerm = '%' . $rawQuery . '%';
-            $stmt = $sqlite->prepare("
-                SELECT product_id, brand_name, primary_ingredient, primary_strength, 
-                       dosage_form, therapeutic_class, manufacturer, packaging_raw, price_inr
-                FROM medicines
-                WHERE brand_name LIKE :like1 OR primary_ingredient LIKE :like2
-                ORDER BY 
-                    CASE WHEN LOWER(therapeutic_class) = 'antidiabetic' THEN 0 ELSE 1 END,
-                    LENGTH(brand_name) ASC
-                LIMIT 30
-            ");
-            $stmt->execute([":like1" => $likeTerm, ":like2" => $likeTerm]);
-            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            // 2. Fallback to LIKE with all tokens matching
+            if (empty($results)) {
+                $whereParts = [];
+                $params = [];
+                foreach ($words as $idx => $w) {
+                    $paramKey = ":w" . $idx;
+                    $whereParts[] = "(m.brand_name LIKE {$paramKey} OR m.primary_ingredient LIKE {$paramKey} OR m.therapeutic_class LIKE {$paramKey})";
+                    $params[$paramKey] = "%" . $w . "%";
+                }
+                $whereSql = implode(' AND ', $whereParts);
+                $stmt = $sqlite->prepare("
+                    SELECT product_id, brand_name, primary_ingredient, primary_strength, 
+                           dosage_form, therapeutic_class, manufacturer, packaging_raw, price_inr
+                    FROM medicines m
+                    WHERE $whereSql
+                    ORDER BY 
+                        CASE WHEN LOWER(m.therapeutic_class) = 'antidiabetic' THEN 0 ELSE 1 END,
+                        LENGTH(m.brand_name) ASC
+                    LIMIT 35
+                ");
+                $stmt->execute($params);
+                $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
         }
     }
 
