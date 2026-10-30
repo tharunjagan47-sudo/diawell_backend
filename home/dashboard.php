@@ -89,11 +89,61 @@ try {
     $hour = (int) date("H");
     $timeGreeting = ($hour < 12) ? "Good morning" : (($hour < 17) ? "Good afternoon" : "Good evening");
 
+    // Dynamic AI tip based on glucose value & diet
+    $tipText = "A 10-minute light walk after meals helps smooth out blood sugar levels effectively!";
+    if ($glucoseVal > 180) {
+        $tipText = "Glucose is elevated. Drink water and take a gentle 15-minute walk to help insulin sensitivity.";
+    } elseif ($glucoseVal < 70) {
+        $tipText = "Glucose is low! Have 15g fast-acting carbs (half cup fruit juice) and re-test in 15 mins.";
+    } elseif ($totalCarbs > 200) {
+        $tipText = "Carb intake is high today. Consider balanced fiber-rich vegetables for your next meal.";
+    }
+
+    // Daily routine check
+    $bStmt = $pdo->prepare("SELECT count(*) FROM food_logs WHERE user_id = :uid AND log_date = :d AND LOWER(meal_category) = 'breakfast'");
+    $bStmt->execute([":uid" => $userId, ":d" => $today]);
+    $breakfastDone = ((int) $bStmt->fetchColumn()) > 0;
+
+    $gCheckStmt = $pdo->prepare("SELECT count(*) FROM glucose_readings WHERE user_id = :uid AND reading_date = :d");
+    $gCheckStmt->execute([":uid" => $userId, ":d" => $today]);
+    $glucoseDone = ((int) $gCheckStmt->fetchColumn()) > 0;
+
+    $lStmt = $pdo->prepare("SELECT count(*) FROM food_logs WHERE user_id = :uid AND log_date = :d AND LOWER(meal_category) = 'lunch'");
+    $lStmt->execute([":uid" => $userId, ":d" => $today]);
+    $lunchDone = ((int) $lStmt->fetchColumn()) > 0;
+
+    $dStmt = $pdo->prepare("SELECT count(*) FROM food_logs WHERE user_id = :uid AND log_date = :d AND LOWER(meal_category) = 'dinner'");
+    $dStmt->execute([":uid" => $userId, ":d" => $today]);
+    $dinnerDone = ((int) $dStmt->fetchColumn()) > 0;
+
+    $mCheckStmt = $pdo->prepare("SELECT count(*) FROM medications WHERE user_id = :uid AND (reminder_date = :d OR frequency = 'Daily') AND status = 'Taken'");
+    $mCheckStmt->execute([":uid" => $userId, ":d" => $today]);
+    $medsDone = ((int) $mCheckStmt->fetchColumn()) > 0;
+    $dinnerMedsDone = $dinnerDone || $medsDone;
+
+    // Routine checklist
+    $routineItems = [
+        ["icon" => "🥣", "label" => "Breakfast", "is_done" => $breakfastDone],
+        ["icon" => "🩸", "label" => "Glucose", "is_done" => $glucoseDone],
+        ["icon" => "🥗", "label" => "Lunch", "is_done" => $lunchDone],
+        ["icon" => "💊", "label" => "Dinner/Meds", "is_done" => $dinnerMedsDone]
+    ];
+
+    $doneCount = ($breakfastDone ? 1 : 0) + ($glucoseDone ? 1 : 0) + ($lunchDone ? 1 : 0) + ($dinnerMedsDone ? 1 : 0);
+    $adherencePercent = round(($doneCount / 4) * 100);
+    $wellnessSubtitle = "Daily Wellness • {$adherencePercent}% On Track";
+
     respond(true, "Dashboard data retrieved successfully.", 200, [
         "user_id" => (int) $user["id"],
         "greeting" => "{$timeGreeting}, {$user["full_name"]} 👋",
+        "wellness_subtitle" => $wellnessSubtitle,
         "streak_badge" => "🔥 {$streakDays} Day Logging Streak",
         "target_badge" => "🎯 Fasting Target Met",
+        "ai_tip" => [
+            "title" => "Dr. JARVIS Tip Of The Day ⚡",
+            "tip" => $tipText
+        ],
+        "routine" => $routineItems,
         "profile" => [
             "name" => $user["full_name"],
             "diabetes_type" => $user["diabetes_type"] ?? "Type 2",
