@@ -20,6 +20,11 @@ $rawDate = trim($data["reminder_date"] ?? $data["reminderDateText"] ?? date("Y-m
 $timing = trim($data["timing"] ?? $data["selectedTiming"] ?? "After Meal");
 $frequency = trim($data["frequency"] ?? "Daily");
 $notes = trim($data["notes"] ?? "");
+$therapeuticClass = trim($data["therapeutic_class"] ?? $data["category"] ?? "");
+$manufacturer = trim($data["manufacturer"] ?? "");
+$primaryIngredient = trim($data["primary_ingredient"] ?? "");
+$packaging = trim($data["packaging"] ?? "");
+$dosageForm = trim($data["dosage_form"] ?? "Tablet");
 
 if ($name === "") {
     respond(false, "Medication name is required.", 400);
@@ -41,10 +46,10 @@ try {
         respond(false, "User not found with ID: " . $userId, 404);
     }
 
-    // 2. Insert medication reminder
+    // 2. Insert medication reminder with enriched dataset attributes
     $stmt = $pdo->prepare(
-        "INSERT INTO medications (user_id, name, dose, reminder_time, reminder_date, timing, frequency, status, notes)
-         VALUES (:user_id, :name, :dose, :reminder_time, :reminder_date, :timing, :frequency, 'Upcoming', :notes)"
+        "INSERT INTO medications (user_id, name, dose, reminder_time, reminder_date, timing, frequency, status, notes, therapeutic_class, manufacturer, primary_ingredient, packaging, dosage_form)
+         VALUES (:user_id, :name, :dose, :reminder_time, :reminder_date, :timing, :frequency, 'Upcoming', :notes, :therapeutic_class, :manufacturer, :primary_ingredient, :packaging, :dosage_form)"
     );
 
     $stmt->execute([
@@ -55,7 +60,12 @@ try {
         ":reminder_date" => $reminderDate,
         ":timing" => $timing,
         ":frequency" => $frequency,
-        ":notes" => $notes
+        ":notes" => $notes,
+        ":therapeutic_class" => $therapeuticClass,
+        ":manufacturer" => $manufacturer,
+        ":primary_ingredient" => $primaryIngredient,
+        ":packaging" => $packaging,
+        ":dosage_form" => $dosageForm
     ]);
 
     $medId = (int) $pdo->lastInsertId();
@@ -83,7 +93,12 @@ try {
         "timing" => $timing,
         "frequency" => $frequency,
         "status" => "Upcoming",
-        "notes" => $notes
+        "notes" => $notes,
+        "therapeutic_class" => $therapeuticClass,
+        "manufacturer" => $manufacturer,
+        "primary_ingredient" => $primaryIngredient,
+        "packaging" => $packaging,
+        "dosage_form" => $dosageForm
     ]);
 
 } catch (PDOException $e) {

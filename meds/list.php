@@ -17,7 +17,8 @@ $selectedDate = ($parsed !== false) ? date("Y-m-d", $parsed) : date("Y-m-d");
 
 try {
     $stmt = $pdo->prepare(
-        "SELECT id, user_id, name, dose, reminder_time, reminder_date, timing, frequency, status, notes, created_at
+        "SELECT id, user_id, name, dose, reminder_time, reminder_date, timing, frequency, status, notes,
+                therapeutic_class, manufacturer, primary_ingredient, packaging, dosage_form, created_at
          FROM medications
          WHERE user_id = :user_id AND (reminder_date = :date OR frequency = 'Daily')
          ORDER BY reminder_time ASC"
@@ -57,7 +58,13 @@ try {
             "status" => $status,
             "status_color" => $statusColor,
             "status_bg" => $statusBg,
-            "notes" => $row["notes"] ?? ""
+            "notes" => $row["notes"] ?? "",
+            "therapeutic_class" => $row["therapeutic_class"] ?? "",
+            "category" => $row["therapeutic_class"] ?? "",
+            "manufacturer" => $row["manufacturer"] ?? "",
+            "primary_ingredient" => $row["primary_ingredient"] ?? "",
+            "packaging" => $row["packaging"] ?? "",
+            "dosage_form" => $row["dosage_form"] ?? "Tablet"
         ];
     }
 
