@@ -11,17 +11,17 @@ $dbPath = __DIR__ . '/../data/meds.db';
 // Fallback curated list in case SQLite database file is missing
 $fallbackList = [
     [
-        "name" => "Glycomet 500 Tablet",
+        "name" => "Glycomet 500 SR Tablet",
         "dose" => "500mg • Tablet",
         "primary_ingredient" => "Metformin",
         "primary_strength" => "500mg",
         "dosage_form" => "tablet",
         "category" => "Antidiabetic",
         "manufacturer" => "USV Ltd",
-        "packaging" => "strip of 10 tablets",
-        "price_inr" => "₹18.70",
+        "packaging" => "strip of 20 tablet sr",
+        "price_inr" => "₹47.71",
         "timing" => "With Meal",
-        "info" => "First-line oral antidiabetic; lowers hepatic glucose production and improves insulin sensitivity.",
+        "info" => "Active: Metformin (500mg) • Class: Antidiabetic • Mfd: USV Ltd",
         "icon" => "💊"
     ],
     [
@@ -32,10 +32,10 @@ $fallbackList = [
         "dosage_form" => "tablet",
         "category" => "Antidiabetic",
         "manufacturer" => "Sanofi India Ltd",
-        "packaging" => "strip of 15 tablets",
-        "price_inr" => "₹182.50",
+        "packaging" => "strip of 30 tablets",
+        "price_inr" => "₹212.65",
         "timing" => "Before Breakfast",
-        "info" => "Second-generation sulfonylurea; stimulates pancreatic beta-cells to secrete insulin.",
+        "info" => "Active: Glimepiride (2mg) • Class: Antidiabetic • Mfd: Sanofi India Ltd",
         "icon" => "💊"
     ],
     [
@@ -46,86 +46,57 @@ $fallbackList = [
         "dosage_form" => "tablet",
         "category" => "Antidiabetic",
         "manufacturer" => "MSD Pharmaceuticals Pvt Ltd",
-        "packaging" => "strip of 14 tablets",
-        "price_inr" => "₹385.00",
-        "timing" => "Once Daily",
-        "info" => "DPP-4 inhibitor; enhances natural incretin hormone levels to regulate postprandial glucose.",
+        "packaging" => "strip of 7 tablets",
+        "price_inr" => "₹270.00",
+        "timing" => "With Food",
+        "info" => "Active: Sitagliptin (100mg) • Class: Antidiabetic • Mfd: MSD Pharmaceuticals Pvt Ltd",
         "icon" => "💊"
     ],
     [
-        "name" => "Jardiance 10mg Tablet",
-        "dose" => "10mg • Tablet",
+        "name" => "Jardiance Met 12.5mg/500mg Tablet",
+        "dose" => "12.5mg • Tablet",
         "primary_ingredient" => "Empagliflozin",
-        "primary_strength" => "10mg",
+        "primary_strength" => "12.5mg",
         "dosage_form" => "tablet",
         "category" => "Antidiabetic",
         "manufacturer" => "Boehringer Ingelheim",
         "packaging" => "strip of 10 tablets",
-        "price_inr" => "₹540.00",
-        "timing" => "In the Morning",
-        "info" => "SGLT2 inhibitor; promotes urinary excretion of excess glucose and offers cardiorenal protection.",
+        "price_inr" => "₹400.00",
+        "timing" => "With Meal",
+        "info" => "Active: Empagliflozin (12.5mg) • Class: Antidiabetic • Mfd: Boehringer Ingelheim",
         "icon" => "💊"
-    ],
-    [
-        "name" => "Lantus 100IU/ml Cartridge",
-        "dose" => "100IU/ml • Injection",
-        "primary_ingredient" => "Insulin Glargine",
-        "primary_strength" => "100IU/ml",
-        "dosage_form" => "injection",
-        "category" => "Antidiabetic",
-        "manufacturer" => "Sanofi India Ltd",
-        "packaging" => "packet of 5 cartridges",
-        "price_inr" => "₹1,450.00",
-        "timing" => "At Bedtime",
-        "info" => "Long-acting recombinant human basal insulin delivering smooth 24-hour glycemic control.",
-        "icon" => "💉"
     ],
     [
         "name" => "Galvus Met 50mg/500mg Tablet",
-        "dose" => "50mg/500mg • Tablet",
-        "primary_ingredient" => "Vildagliptin + Metformin",
-        "primary_strength" => "50mg/500mg",
+        "dose" => "500mg • Tablet",
+        "primary_ingredient" => "Metformin",
+        "primary_strength" => "500mg",
         "dosage_form" => "tablet",
         "category" => "Antidiabetic",
         "manufacturer" => "Novartis India Ltd",
-        "packaging" => "strip of 10 tablets",
-        "price_inr" => "₹260.00",
-        "timing" => "With Meal",
-        "info" => "Dual-action combination targeting insulin secretion and insulin resistance simultaneously.",
-        "icon" => "💊"
-    ],
-    [
-        "name" => "Atorva 10 Tablet",
-        "dose" => "10mg • Tablet",
-        "primary_ingredient" => "Atorvastatin",
-        "primary_strength" => "10mg",
-        "dosage_form" => "tablet",
-        "category" => "Cardiovascular",
-        "manufacturer" => "Zydus Cadila",
         "packaging" => "strip of 15 tablets",
-        "price_inr" => "₹95.00",
-        "timing" => "At Bedtime",
-        "info" => "Lipid-lowering statin providing essential cardiovascular protection in diabetes.",
+        "price_inr" => "₹328.50",
+        "timing" => "With Meal",
+        "info" => "Active: Metformin (500mg) • Class: Antidiabetic • Mfd: Novartis India Ltd",
         "icon" => "💊"
     ],
     [
-        "name" => "Becosules Capsule",
-        "dose" => "1 Capsule",
-        "primary_ingredient" => "B-Complex + Vitamin C",
-        "primary_strength" => "Standard",
-        "dosage_form" => "capsule",
-        "category" => "Vitamin Supplement",
-        "manufacturer" => "Pfizer Ltd",
-        "packaging" => "strip of 20 capsules",
-        "price_inr" => "₹48.00",
-        "timing" => "After Lunch",
-        "info" => "Essential B-vitamin complex supporting nerve health, cellular energy, and vitality.",
+        "name" => "Gluconorm SR 500mg Tablet",
+        "dose" => "500mg • Tablet",
+        "primary_ingredient" => "Metformin",
+        "primary_strength" => "500mg",
+        "dosage_form" => "tablet",
+        "category" => "Antidiabetic",
+        "manufacturer" => "Lupin Ltd",
+        "packaging" => "strip of 15 tablets",
+        "price_inr" => "₹35.05",
+        "timing" => "With Meal",
+        "info" => "Active: Metformin (500mg) • Class: Antidiabetic • Mfd: Lupin Ltd",
         "icon" => "💊"
     ]
 ];
 
 if (!file_exists($dbPath)) {
-    // If SQLite file not yet generated, return filtered fallback list
     if ($rawQuery === "") {
         $filtered = $fallbackList;
     } else {
@@ -152,74 +123,72 @@ try {
 
     if ($rawQuery === "") {
         // Return top curated antidiabetic & wellness medicines from dataset
-        $curatedIds = [94187, 75, 121, 27, 448, 785, 1170, 4, 30, 24]; // Known diverse popular products
+        $curatedIds = [94173, 122, 113868, 113878, 94183, 94210, 94182, 94174, 214769, 58235, 66];
         $idList = implode(',', $curatedIds);
         $stmt = $sqlite->query("
             SELECT product_id, brand_name, primary_ingredient, primary_strength,
                    dosage_form, therapeutic_class, manufacturer, packaging_raw, price_inr
             FROM medicines
-            WHERE product_id IN ($idList) OR LOWER(therapeutic_class) = 'antidiabetic'
+            WHERE product_id IN ($idList)
+            ORDER BY CASE product_id
+                WHEN 94173 THEN 1
+                WHEN 122 THEN 2
+                WHEN 113868 THEN 3
+                WHEN 113878 THEN 4
+                WHEN 94183 THEN 5
+                WHEN 94210 THEN 6
+                WHEN 94182 THEN 7
+                WHEN 94174 THEN 8
+                WHEN 214769 THEN 9
+                WHEN 58235 THEN 10
+                WHEN 66 THEN 11
+                ELSE 12 END
             LIMIT 25
         ");
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
-        // Tokenize query words
+        // Clean and tokenize query
         $clean = trim(preg_replace('/[^a-zA-Z0-9\s]/', ' ', $rawQuery));
         $words = array_values(array_filter(explode(' ', $clean)));
 
         if (!empty($words)) {
-            // 1. Try FTS5 with all tokens starred
-            try {
-                $ftsParts = [];
-                foreach ($words as $w) {
-                    $cleanWord = trim($w);
-                    if ($cleanWord !== "") {
-                        $ftsParts[] = '"' . $cleanWord . '"*';
-                    }
+            // Build prefix tokens for FTS5
+            $ftsParts = [];
+            foreach ($words as $w) {
+                $cleanWord = trim($w);
+                if ($cleanWord !== "") {
+                    $ftsParts[] = '"' . $cleanWord . '"*';
                 }
-                if (!empty($ftsParts)) {
-                    $ftsQuery = implode(' ', $ftsParts);
-                    $stmt = $sqlite->prepare("
-                        SELECT m.product_id, m.brand_name, m.primary_ingredient, m.primary_strength, 
-                               m.dosage_form, m.therapeutic_class, m.manufacturer, m.packaging_raw, m.price_inr
-                        FROM medicines_fts f
-                        JOIN medicines m ON m.product_id = f.rowid
-                        WHERE medicines_fts MATCH :term
-                        ORDER BY 
-                            CASE WHEN LOWER(m.therapeutic_class) = 'antidiabetic' THEN 0 ELSE 1 END,
-                            rank
-                        LIMIT 35
-                    ");
-                    $stmt->execute([":term" => $ftsQuery]);
-                    $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                }
-            } catch (Exception $ftsEx) {
-                // If FTS encounters syntax nuance, fallback seamlessly
-                $results = [];
             }
 
-            // 2. Fallback to LIKE with all tokens matching
-            if (empty($results)) {
-                $whereParts = [];
-                $params = [];
-                foreach ($words as $idx => $w) {
-                    $paramKey = ":w" . $idx;
-                    $whereParts[] = "(m.brand_name LIKE {$paramKey} OR m.primary_ingredient LIKE {$paramKey} OR m.therapeutic_class LIKE {$paramKey})";
-                    $params[$paramKey] = "%" . $w . "%";
-                }
-                $whereSql = implode(' AND ', $whereParts);
+            if (!empty($ftsParts)) {
+                // 1. Strict AND match across fields with BM25 ranking (brand_name weighted 10x, ingredient 6x, active ingredients 4x)
+                $ftsQueryAnd = implode(' ', $ftsParts);
                 $stmt = $sqlite->prepare("
                     SELECT product_id, brand_name, primary_ingredient, primary_strength, 
                            dosage_form, therapeutic_class, manufacturer, packaging_raw, price_inr
-                    FROM medicines m
-                    WHERE $whereSql
-                    ORDER BY 
-                        CASE WHEN LOWER(m.therapeutic_class) = 'antidiabetic' THEN 0 ELSE 1 END,
-                        LENGTH(m.brand_name) ASC
-                    LIMIT 35
+                    FROM medicines_fast
+                    WHERE medicines_fast MATCH :term
+                    ORDER BY bm25(medicines_fast, 10.0, 6.0, 2.0, 1.0, 2.0, 1.0, 4.0)
+                    LIMIT 30
                 ");
-                $stmt->execute($params);
+                $stmt->execute([":term" => $ftsQueryAnd]);
                 $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                // 2. If multi-word search returned 0 rows, fallback to OR match
+                if (empty($results) && count($ftsParts) > 1) {
+                    $ftsQueryOr = implode(' OR ', $ftsParts);
+                    $stmt = $sqlite->prepare("
+                        SELECT product_id, brand_name, primary_ingredient, primary_strength, 
+                               dosage_form, therapeutic_class, manufacturer, packaging_raw, price_inr
+                        FROM medicines_fast
+                        WHERE medicines_fast MATCH :term
+                        ORDER BY bm25(medicines_fast, 10.0, 6.0, 2.0, 1.0, 2.0, 1.0, 4.0)
+                        LIMIT 30
+                    ");
+                    $stmt->execute([":term" => $ftsQueryOr]);
+                    $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                }
             }
         }
     }

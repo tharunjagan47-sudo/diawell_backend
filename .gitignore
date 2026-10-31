@@ -2,3 +2,6 @@ ai_service/venv/
 ai_service/__pycache__/
 *.pyc
 
+# Database files
+data/meds.db
+*.db

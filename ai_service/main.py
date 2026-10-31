@@ -11,14 +11,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from recommender import NutritionDatasetManager, DiabetesRecommendationEngine
+from activity_recommender import CompendiumDatasetManager, ActivityRecommendationEngine
 
-# Path to the dataset
+# Paths to the datasets
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATASET_PATH = os.path.join(BASE_DIR, "data", "Indian_Food_Nutrition_Processed.csv")
+ACTIVITY_DATASET_PATH = os.path.join(BASE_DIR, "activity dataset", "walking_running_cycling.csv")
 
-# Initialize dataset manager and recommendation engine
+# Initialize dataset managers and recommendation engines
 dataset_manager = NutritionDatasetManager(DATASET_PATH)
 recommender_engine = DiabetesRecommendationEngine(dataset_manager)
+
+compendium_manager = CompendiumDatasetManager(ACTIVITY_DATASET_PATH)
+activity_engine = ActivityRecommendationEngine(compendium_manager)
 
 app = FastAPI(
     title="DiaWell AI Nutrition & Food Recommendation Service",
@@ -59,6 +64,24 @@ class PatientProfileRequest(BaseModel):
     limit: Optional[int] = Field(default=10, ge=1, le=50, description="Number of recommendations to return")
 
 
+class ActivityRecommendationRequest(BaseModel):
+    user_id: Optional[int] = None
+    age: Optional[int] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    current_glucose_mg_dl: Optional[float] = None
+    target_glucose_mg_dl: Optional[float] = 120.0
+    reading_type: Optional[str] = None
+    reading_date: Optional[str] = None
+    reading_time: Optional[str] = None
+    fitness_level: Optional[str] = "Moderate"
+    preferred_activity: Optional[str] = "All"
+    available_time_mins: Optional[int] = None
+    physical_limitations: Optional[List[str]] = Field(default_factory=list)
+    medications: Optional[List[str]] = Field(default_factory=list)
+    recent_activities: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
+
+
 # =========================================================================
 # API ENDPOINTS
 # =========================================================================
@@ -67,13 +90,39 @@ class PatientProfileRequest(BaseModel):
 def health_check():
     """Health status and dataset loading check."""
     stats = dataset_manager.get_stats()
+    comp_loaded = compendium_manager.df is not None
+    total_acts = len(compendium_manager.df) if comp_loaded else 0
     return {
         "status": "healthy",
-        "service": "DiaWell AI Food Recommendation Service",
+        "service": "DiaWell AI Food & Activity Recommendation Service",
         "dataset_loaded": dataset_manager.df is not None,
         "total_dishes": stats.get("total_dishes", 0),
-        "dataset_path": DATASET_PATH
+        "dataset_path": DATASET_PATH,
+        "activity_dataset_loaded": comp_loaded,
+        "total_activities": total_acts,
+        "activity_dataset_path": ACTIVITY_DATASET_PATH
     }
+
+
+@app.post("/recommend_activities", tags=["AI Activity Recommendations"])
+def recommend_activities(request: ActivityRecommendationRequest):
+    """
+    Evaluates patient profile, glucose readings, fitness tier, history, and medical safety
+    against the 2024 Adult Compendium of Physical Activities (walking_running_cycling.csv).
+    Returns personalized duration, validated distance, MET value, intensity, and safety guidance.
+    """
+    try:
+        results = activity_engine.generate_recommendations(request.dict())
+        return {
+            "success": results.get("success", False),
+            "message": results.get("message", "Activity recommendations generated successfully."),
+            "data": results
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error evaluating activity recommendations: {str(e)}"
+        )
 
 
 @app.get("/stats", tags=["Dataset"])
