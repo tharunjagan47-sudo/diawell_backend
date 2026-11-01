@@ -166,3 +166,20 @@ function getProfilePhotoUrl($path) {
 }
 
 
+
+
+/**
+ * Fast check to see if an external microservice is listening before initiating cURL.
+ * Prevents long 3-6 second hangs on localhost/closed ports on Windows.
+ */
+function isMicroserviceAvailable($url = "http://127.0.0.1:8001", $timeout = 0.05) {
+    $parsed = parse_url($url);
+    $host = $parsed["host"] ?? "127.0.0.1";
+    $port = $parsed["port"] ?? 8001;
+    $fp = @fsockopen($host, $port, $errno, $errstr, $timeout);
+    if ($fp) {
+        fclose($fp);
+        return true;
+    }
+    return false;
+}
