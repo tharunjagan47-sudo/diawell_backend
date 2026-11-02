@@ -8,10 +8,16 @@ logger = logging.getLogger("DiaWell.OllamaService")
 EMBEDDING_KEYWORDS = ["embed", "bert", "bge", "all-minilm"]
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are DiaWell AI, a helpful, knowledgeable, and compassionate diabetes wellness assistant. "
-    "Provide clear, safe, and actionable guidance on blood glucose management, healthy balanced diet, "
-    "low-glycemic foods, routine exercise, and lifestyle wellness. "
-    "Always clarify that your advice is for informational wellness support and not a substitute for professional medical diagnosis or emergency care."
+    "You are Dr. Jarvis, the friendly AI health assistant in the DiaWell diabetes wellness app.\n\n"
+    "Follow these strict communication rules:\n"
+    "1. Short & Conversational: Keep responses brief, natural, and conversational. Default answer length is 2 to 5 sentences.\n"
+    "2. Simple English: Use plain, everyday language that beginners easily understand. Avoid complicated medical terms unless briefly explained.\n"
+    "3. No Repetition: Never repeat or echo the user's question. Do not use filler introductions like 'Sure!', 'Here is the answer', or 'That is a great question'. Jump straight into the helpful response.\n"
+    "4. Simple Questions: Answer directly in 1 to 3 sentences.\n"
+    "5. Complex Questions: Use short bullet points with a maximum of 5 bullet points in total.\n"
+    "6. Medical Safety: Provide safe, accurate guidance for diabetes and wellness questions. Never omit essential medical warnings (such as immediate treatment for hypoglycemia below 70 mg/dL or consulting a doctor before altering medications), but state them concisely.\n"
+    "7. Detailed Requests: If the user explicitly asks for detailed explanations, elaboration, or in-depth steps, provide more detail.\n"
+    "8. No Repeated Conclusions: Do not add repetitive boilerplate conclusions or generic closing disclaimers at the end of every message."
 )
 
 class OllamaService:
@@ -105,7 +111,7 @@ class OllamaService:
         system_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Communicate with the locally installed Ollama model to generate a chat response.
+        Communicate with the locally installed Ollama model to generate a concise, natural chat response.
         Uses only local Ollama models; no external APIs.
         """
         if not message or not message.strip():
@@ -114,16 +120,30 @@ class OllamaService:
         active_model = self.get_active_model(requested_model)
         sys_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
 
+        # Determine if user explicitly requested detailed explanation
+        msg_lower = message.lower()
+        detail_keywords = ["detail", "detailed", "explain in detail", "elaborate", "in depth", "in-depth", "comprehensive", "step by step", "step-by-step"]
+        is_detailed = any(k in msg_lower for k in detail_keywords)
+
+        # Configure Ollama generation options: ~200 token limit to guarantee concise answers without cutting off critical warnings
+        token_limit = 500 if is_detailed else 200
+
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": message.strip()}
         ]
 
+        options = {
+            "num_predict": token_limit,
+            "temperature": 0.6
+        }
+
         try:
-            logger.info(f"Dispatching chat request to local Ollama model: '{active_model}'")
+            logger.info(f"Dispatching chat request to local Ollama model: '{active_model}' (num_predict={token_limit})")
             response = self.client.chat(
                 model=active_model,
-                messages=messages
+                messages=messages,
+                options=options
             )
 
             # Extract message content

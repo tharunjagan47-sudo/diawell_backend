@@ -1,170 +1,165 @@
 <?php
-require_once __DIR__ . '/../config/helpers.php';
-require_once __DIR__ . '/../config/db.php';
+/**
+ * DiaWell AI Chat Endpoint (PHP to Python FastAPI Bridge)
+ * 
+ * Forwards chat questions to the local Python FastAPI AI microservice (http://127.0.0.1:8000/chat)
+ * which communicates with locally installed Ollama models.
+ * 
+ * Accepts POST JSON:
+ *   { "message": "Hello DiaWell AI" }
+ * 
+ * Returns JSON:
+ *   {
+ *       "success": true,
+ *       "message": "AI response generated successfully.",
+ *       "response": "Hello! I am DiaWell AI..."
+ *   }
+ */
 
-$method = $_SERVER["REQUEST_METHOD"];
-$data = getRequestData();
-$userId = getUserId($data);
+// Enable CORS and define JSON response type
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-User-Id");
+header("Content-Type: application/json; charset=UTF-8");
 
-if (!$userId) {
-    respond(false, "User not specified. Please provide user_id or log in.", 401);
+// Handle preflight OPTIONS request
+if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
+    http_response_code(200);
+    exit;
 }
 
-// ==========================================
-// DELETE: Clear chat history
-// ==========================================
-if ($method === "DELETE") {
-    try {
-        $stmt = $pdo->prepare("DELETE FROM ai_chat_messages WHERE user_id = :user_id");
-        $stmt->execute([":user_id" => $userId]);
-
-        respond(true, "AI chat history cleared successfully.", 200, [
-            "user_id" => $userId,
-            "cleared" => true
-        ]);
-    } catch (PDOException $e) {
-        error_log("AI chat clear error: " . $e->getMessage());
-        respond(false, "Database error clearing chat history.", 500);
-    }
+/**
+ * Helper to emit standardized JSON response with required fields: success, message, response
+ */
+function sendResponse($success, $message, $response = null, $statusCode = 200) {
+    http_response_code($statusCode);
+    echo json_encode([
+        "success" => (bool) $success,
+        "message" => (string) $message,
+        "response" => $response
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
-// ==========================================
-// GET: Retrieve conversation history
-// ==========================================
-if ($method === "GET") {
+// 1. Enforce POST HTTP method
+$method = $_SERVER["REQUEST_METHOD"] ?? "GET";
+if ($method !== "POST") {
+    sendResponse(false, "Method not allowed. Only POST requests are accepted.", null, 405);
+}
+
+// 2. Read and validate raw JSON input
+$rawInput = file_get_contents("php://input");
+if ($rawInput === false || trim($rawInput) === "") {
+    sendResponse(false, "Request body is empty. Please provide a JSON payload with 'message'.", null, 400);
+}
+
+$data = json_decode($rawInput, true);
+if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
+    sendResponse(false, "Invalid JSON format in request body. JSON parse error: " . json_last_error_msg(), null, 400);
+}
+
+// 3. Validate user message field
+if (!isset($data["message"])) {
+    sendResponse(false, "Missing required field 'message' in JSON request body.", null, 400);
+}
+
+$userMessage = trim((string) $data["message"]);
+if ($userMessage === "") {
+    sendResponse(false, "Message cannot be empty or blank.", null, 400);
+}
+
+// 4. Configure local Python AI microservice endpoint
+$pythonHost = getenv("AI_SERVICE_URL") ?: "http://127.0.0.1:8000";
+$pythonChatUrl = rtrim($pythonHost, "/") . "/chat";
+
+// Build payload to forward to Python service
+$forwardPayload = [
+    "message" => $userMessage
+];
+
+// Optionally forward model if explicitly passed
+if (!empty($data["model"]) && is_string($data["model"])) {
+    $forwardPayload["model"] = trim($data["model"]);
+}
+
+$jsonPayload = json_encode($forwardPayload);
+
+// 5. Use PHP cURL to forward request to local FastAPI service
+$ch = curl_init($pythonChatUrl);
+curl_setopt_array($ch, [
+    CURLOPT_POST => true,
+    CURLOPT_POSTFIELDS => $jsonPayload,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => [
+        "Content-Type: application/json",
+        "Content-Length: " . strlen($jsonPayload),
+        "Accept: application/json"
+    ],
+    CURLOPT_CONNECTTIMEOUT => 5,
+    CURLOPT_TIMEOUT => 60
+]);
+
+$responseBody = curl_exec($ch);
+$curlErrorNo = curl_errno($ch);
+$curlErrorMsg = curl_error($ch);
+$httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+// 6. Handle cURL and connection errors
+if ($responseBody === false || $curlErrorNo !== 0) {
+    sendResponse(
+        false,
+        "Cannot connect to local Python AI service at {$pythonChatUrl}. Please ensure FastAPI/Uvicorn is running on port 8000. (Details: {$curlErrorMsg})",
+        null,
+        503
+    );
+}
+
+// 7. Parse response from Python FastAPI
+$decodedResponse = json_decode($responseBody, true);
+
+if (json_last_error() !== JSON_ERROR_NONE || !is_array($decodedResponse)) {
+    sendResponse(
+        false,
+        "Malformed response received from Python AI service.",
+        null,
+        502
+    );
+}
+
+// 8. Handle HTTP errors from FastAPI (e.g. 400, 500, 503)
+if ($httpStatusCode < 200 || $httpStatusCode >= 300) {
+    $errorMessage = !empty($decodedResponse["message"])
+        ? $decodedResponse["message"]
+        : "Python AI service returned HTTP status {$httpStatusCode}.";
+    $errorDetails = isset($decodedResponse["response"]) ? $decodedResponse["response"] : null;
+    
+    $returnCode = ($httpStatusCode >= 400 && $httpStatusCode < 600) ? $httpStatusCode : 502;
+    sendResponse(false, $errorMessage, $errorDetails, $returnCode);
+}
+
+// 9. Successfully received AI response
+$success = isset($decodedResponse["success"]) ? (bool) $decodedResponse["success"] : true;
+$message = isset($decodedResponse["message"]) ? (string) $decodedResponse["message"] : "AI response retrieved successfully.";
+$replyContent = isset($decodedResponse["response"]) ? $decodedResponse["response"] : "";
+
+// Optional non-blocking database logging if user_id is provided
+$userId = $data["user_id"] ?? $_SERVER["HTTP_X_USER_ID"] ?? null;
+if (!empty($userId) && is_numeric($userId)) {
     try {
-        $stmt = $pdo->prepare(
-            "SELECT id, sender, message, created_at 
-             FROM ai_chat_messages 
-             WHERE user_id = :user_id 
-             ORDER BY created_at ASC, id ASC"
-        );
-        $stmt->execute([":user_id" => $userId]);
-        $rows = $stmt->fetchAll();
-
-        // If empty, return initial greeting matching AiChatbotScreen.kt
-        if (empty($rows)) {
-            $userStmt = $pdo->prepare("SELECT full_name FROM users WHERE id = :id LIMIT 1");
-            $userStmt->execute([":id" => $userId]);
-            $u = $userStmt->fetch();
-            $name = $u ? $u["full_name"] : "there";
-
-            $initialGreeting = "Hi {$name}! I'm JARVIS, your AI Health & Glucose Assistant! ⚡🩺 I can suggest balanced meal plans, answer food questions, and track your daily routine. What's on your mind?";
-
-            $ins = $pdo->prepare("INSERT INTO ai_chat_messages (user_id, sender, message) VALUES (:uid, 'ai', :msg)");
-            $ins->execute([":uid" => $userId, ":msg" => $initialGreeting]);
-
-            $rows = [[
-                "id" => (int) $pdo->lastInsertId(),
-                "sender" => "ai",
-                "message" => $initialGreeting,
-                "created_at" => date("Y-m-d H:i:s")
-            ]];
+        @require_once __DIR__ . '/../config/db.php';
+        if (isset($pdo) && $pdo instanceof PDO) {
+            $stmt = $pdo->prepare("INSERT INTO ai_chat_messages (user_id, sender, message) VALUES (:uid, 'user', :msg)");
+            $stmt->execute([":uid" => (int) $userId, ":msg" => $userMessage]);
+            
+            $stmt2 = $pdo->prepare("INSERT INTO ai_chat_messages (user_id, sender, message) VALUES (:uid, 'ai', :msg)");
+            $stmt2->execute([":uid" => (int) $userId, ":msg" => is_string($replyContent) ? $replyContent : json_encode($replyContent)]);
         }
-
-        $formatted = array_map(function($r) {
-            return [
-                "id" => (int) $r["id"],
-                "sender" => $r["sender"],
-                "text" => $r["message"],
-                "created_at" => $r["created_at"]
-            ];
-        }, $rows);
-
-        respond(true, "Chat messages retrieved successfully.", 200, [
-            "user_id" => $userId,
-            "count" => count($formatted),
-            "messages" => $formatted
-        ]);
-
-    } catch (PDOException $e) {
-        error_log("AI chat fetch error: " . $e->getMessage());
-        respond(false, "Database error retrieving chat history.", 500);
+    } catch (Exception $dbEx) {
+        // Logging failure should never block or affect the chat response
+        error_log("Optional chat DB logging notice: " . $dbEx->getMessage());
     }
 }
 
-// ==========================================
-// POST: Send message & get JARVIS response
-// ==========================================
-if ($method === "POST") {
-    $userMessage = trim($data["message"] ?? $data["text"] ?? "");
-
-    if ($userMessage === "") {
-        respond(false, "Message text cannot be empty.", 400);
-    }
-
-    try {
-        // 1. Fetch user health context
-        $uStmt = $pdo->prepare(
-            "SELECT u.full_name, u.diabetes_type, u.current_glucose_mg_dl, u.target_glucose_mg_dl,
-                    hp.health_focus, hp.dietary_preferences, hp.allergies,
-                    fp.preferred_diet
-             FROM users u
-             LEFT JOIN health_preferences hp ON hp.user_id = u.id
-             LEFT JOIN food_preferences fp ON fp.user_id = u.id
-             WHERE u.id = :id
-             LIMIT 1"
-        );
-        $uStmt->execute([":id" => $userId]);
-        $context = $uStmt->fetch();
-
-        $userName = $context["full_name"] ?? "Patient";
-        $diabetesType = $context["diabetes_type"] ?? "Type 2";
-        $currentGlucose = $context["current_glucose_mg_dl"] ?? 128.0;
-        $targetGlucose = $context["target_glucose_mg_dl"] ?? 120.0;
-        $prefDiet = $context["preferred_diet"] ?? "Non-Vegetarian";
-
-        // 2. Save user message to database
-        $saveUser = $pdo->prepare("INSERT INTO ai_chat_messages (user_id, sender, message) VALUES (:uid, 'user', :msg)");
-        $saveUser->execute([":uid" => $userId, ":msg" => $userMessage]);
-        $userMsgId = (int) $pdo->lastInsertId();
-
-        // 3. Generate intelligent, contextual diabetic health response
-        $msgLower = strtolower($userMessage);
-        $aiReply = "";
-
-        if (strpos($msgLower, "breakfast") !== false) {
-            $aiReply = "For breakfast, try unsweetened rolled oats with plain curd or Greek yogurt, blueberries, and a few crushed almonds. This provides high soluble fiber, healthy fats and protein to prevent morning glycemic spikes.";
-        } elseif (strpos($msgLower, "lunch") !== false) {
-            $aiReply = "A balanced diabetic lunch: Fill half your plate with leafy greens/salad, one quarter with lean protein (like grilled chicken, tofu, or paneer), and one quarter with complex carbs like brown basmati rice or a multigrain roti.";
-        } elseif (strpos($msgLower, "dinner") !== false) {
-            $aiReply = "For dinner, keep carbohydrates lighter. Steamed vegetables with baked fish, or a warm bowl of yellow moong dal with a small portion of quinoa or methi paratha promotes restful digestion and stable overnight glucose levels.";
-        } elseif (strpos($msgLower, "snack") !== false) {
-            $aiReply = "Great low-glycemic snacks include roasted chana (sprouted gram chaat), a handful of walnuts, cucumber slices with hummus, or half an apple with peanut butter.";
-        } elseif (strpos($msgLower, "fruit") !== false || strpos($msgLower, "mango") !== false || strpos($msgLower, "banana") !== false) {
-            $aiReply = "Whole fruits with edible skin (berries, apples, pears, guavas) have lower glycemic loads. Enjoy fruits like mangoes or bananas in modest portions alongside protein (e.g. nuts) to slow sugar uptake.";
-        } elseif (strpos($msgLower, "glucose") !== false || strpos($msgLower, "sugar") !== false || strpos($msgLower, "reading") !== false) {
-            $aiReply = "Your recent recorded reading is {$currentGlucose} mg/dL compared to your fasting target of {$targetGlucose} mg/dL. Consistent 30-minute post-meal walks and adequate hydration significantly aid in natural insulin sensitivity.";
-        } elseif (strpos($msgLower, "workout") !== false || strpos($msgLower, "exercise") !== false || strpos($msgLower, "walk") !== false) {
-            $aiReply = "A 25–30 minute brisk walk or light cycling session stimulates muscular glucose uptake independently of insulin. It's especially effective when done 30 minutes after your main meal.";
-        } else {
-            $aiReply = "That's a thoughtful question! In managing {$diabetesType} diabetes, maintaining balanced macro portions (fiber, protein, healthy fats) and spacing carbohydrates evenly throughout the day helps you feel energized without unpredictable blood sugar swings.";
-        }
-
-        // 4. Save AI response to database
-        $saveAi = $pdo->prepare("INSERT INTO ai_chat_messages (user_id, sender, message) VALUES (:uid, 'ai', :msg)");
-        $saveAi->execute([":uid" => $userId, ":msg" => $aiReply]);
-        $aiMsgId = (int) $pdo->lastInsertId();
-
-        respond(true, "AI response generated successfully.", 200, [
-            "user_id" => $userId,
-            "user_message" => [
-                "id" => $userMsgId,
-                "sender" => "user",
-                "text" => $userMessage
-            ],
-            "ai_response" => [
-                "id" => $aiMsgId,
-                "sender" => "ai",
-                "text" => $aiReply
-            ]
-        ]);
-
-    } catch (PDOException $e) {
-        error_log("AI chat reply error: " . $e->getMessage());
-        respond(false, "Database error processing AI response.", 500);
-    }
-}
-
-respond(false, "Method not allowed. Use GET, POST, or DELETE.", 405);
-
+// 10. Return final JSON response to Postman client
+sendResponse($success, $message, $replyContent, 200);
