@@ -25,11 +25,17 @@ COL_IRON = "Iron (mg)"
 COL_VIT_C = "Vitamin C (mg)"
 COL_FOLATE = "Folate (µg)"
 
-NON_VEG_KEYWORDS = [
-    "chicken", "mutton", "fish", "egg", "prawn", "keema", "gosht",
-    "meat", "crab", "pork", "beef", "shrimp", "duck", "pomfret",
-    "salmon", "tuna", "seafood", "omlet", "omelette", "bhurji", "tikka (chicken)"
+MEAT_FISH_KEYWORDS = [
+    "chicken", "mutton", "fish", "prawn", "keema", "gosht", "meat",
+    "crab", "pork", "beef", "shrimp", "duck", "pomfret", "salmon",
+    "tuna", "seafood", "tikka (chicken)", "ham", "bacon", "lamb"
 ]
+
+EGG_KEYWORDS = [
+    "egg", "anda", "omlet", "omelette", "bhurji", "poached egg", "boiled egg", "fried egg"
+]
+
+ALL_NON_VEG_KEYWORDS = MEAT_FISH_KEYWORDS + EGG_KEYWORDS
 
 DAIRY_KEYWORDS = [
     "paneer", "milk", "curd", "dahi", "cheese", "butter", "ghee",
@@ -38,18 +44,24 @@ DAIRY_KEYWORDS = [
 
 BEVERAGE_KEYWORDS = [
     "tea", "chai", "coffee", "cooler", "juice", "drink", "shake",
-    "smoothie", "water", "punch", "lemonade", "cocoa"
+    "smoothie", "water", "punch", "lemonade", "cocoa", "sharbat",
+    "squash", "soda", "lassi", "lem-o-gin", "cordial", "syrup"
+]
+
+BROTH_KEYWORDS = [
+    "brown stock", "vegetable stock", "mutton stock", "chicken stock", "beef stock", "meat stock"
 ]
 
 BREAKFAST_KEYWORDS = [
-    "oats", "idli", "dosa", "poha", "upma", "paratha", "pancake",
-    "toast", "cornflakes", "porridge", "thepla", "cheela", "chilla", "puri", "upama"
+    "oats", "idli", "dosa", "poha", "upma", "paratha", "parantha", "pancake",
+    "toast", "cornflakes", "porridge", "thepla", "cheela", "chilla", "puri", "poori",
+    "sandwich", "daliya", "omelet", "omlet", "bhurji", "dhokla", "egg sandwich"
 ]
 
 SNACK_KEYWORDS = [
-    "snack", "chaat", "tikki", "pakoda", "pakora", "samosa", "cutlet",
+    "soup", "chaat", "tikki", "pakoda", "pakora", "samosa", "cutlet",
     "biscuit", "cookie", "roll", "kebab", "vada", "bhel", "chivda",
-    "sprouts", "salad", "soup"
+    "salad", "raita", "dip", "chutney", "murukku", "snack"
 ]
 
 
@@ -139,7 +151,7 @@ class NutritionDatasetManager:
     @staticmethod
     def _infer_diet_type(name: str) -> str:
         name_lower = name.lower()
-        for kw in NON_VEG_KEYWORDS:
+        for kw in ALL_NON_VEG_KEYWORDS:
             if re.search(r"\b" + re.escape(kw) + r"\b", name_lower):
                 return "Non-Vegetarian"
         return "Vegetarian"
@@ -147,8 +159,11 @@ class NutritionDatasetManager:
     @staticmethod
     def _infer_category(name: str) -> str:
         name_lower = name.lower()
+        for kw in BROTH_KEYWORDS:
+            if kw in name_lower:
+                return "Broth"
         for kw in BEVERAGE_KEYWORDS:
-            if re.search(r"\b" + re.escape(kw) + r"\b", name_lower):
+            if kw in name_lower:
                 return "Beverage"
         for kw in BREAKFAST_KEYWORDS:
             if re.search(r"\b" + re.escape(kw) + r"\b", name_lower):
@@ -301,7 +316,7 @@ class NutritionDatasetManager:
             "folate_ug": self._safe_float(row.get(COL_FOLATE)),
             "category": str(row.get("category", "Lunch/Dinner")),
             "diet_type": str(row.get("diet_type", "Vegetarian")),
-            "portion": "100 g portion basis",  # Standard catalog basis
+            "portion": "100 g portion basis",
             "has_missing_nutrients": bool(row.get("has_missing_nutrients", False)),
             "icon": "🥗" if row.get("diet_type") == "Vegetarian" else "🍗"
         }
@@ -352,7 +367,7 @@ class DiabetesRecommendationEngine:
         weight_kg = patient_profile.get("weight_kg")
         age = patient_profile.get("age")
 
-        diet_pref = str(patient_profile.get("dietary_preferences") or patient_profile.get("preferred_diet") or "Non-Vegetarian").strip()
+        diet_pref = str(patient_profile.get("dietary_preferences") or patient_profile.get("preferred_diet") or "Vegetarian").strip()
         allergies = patient_profile.get("allergies") or []
         if isinstance(allergies, str):
             allergies = [a.strip() for a in allergies.split(",") if a.strip()]
@@ -364,7 +379,7 @@ class DiabetesRecommendationEngine:
         category_filter = category or patient_profile.get("category")
 
         # -------------------------------------------------------------
-        # 1. BMI Calculation for Contextual Health Information (Not standalone rule)
+        # 1. BMI Calculation for Contextual Health Information
         # -------------------------------------------------------------
         bmi = None
         bmi_category = None
@@ -390,10 +405,9 @@ class DiabetesRecommendationEngine:
 
         # -------------------------------------------------------------
         # 2. Glucose Reading Contextual Evaluation
-        # (Point-in-time reference, never a standalone diagnosis)
         # -------------------------------------------------------------
         glucose_context_note = None
-        glucose_status = "unrecorded"
+        glucose_status = "normal"
         hypo_alert = None
 
         if current_glucose is not None:
@@ -410,21 +424,19 @@ class DiabetesRecommendationEngine:
                         "(e.g., 1/2 cup fruit juice or 3-4 glucose tablets) immediately and re-test in 15 minutes as directed by your healthcare team."
                     )
                 elif "fasting" in r_type_clean.lower():
-                    # Fasting thresholds (ADA: normal < 100, impaired 100-125, elevated >= 126)
                     if g_val >= 126.0:
-                        glucose_status = "elevated"
+                        glucose_status = "high"
                     elif g_val >= 100.0:
-                        glucose_status = "borderline_fasting"
+                        glucose_status = "elevated"
                     else:
-                        glucose_status = "in_target"
+                        glucose_status = "normal"
                 elif "post" in r_type_clean.lower() or "meal" in r_type_clean.lower():
-                    # Post-prandial thresholds (ADA: < 140 normal, 140-199 elevated, >= 200 high)
                     if g_val >= 200.0:
                         glucose_status = "high"
                     elif g_val >= 140.0:
                         glucose_status = "elevated"
                     else:
-                        glucose_status = "in_target"
+                        glucose_status = "normal"
                 else:
                     if g_val >= 180.0:
                         glucose_status = "high"
@@ -434,27 +446,32 @@ class DiabetesRecommendationEngine:
                         glucose_status = "normal"
 
                 glucose_context_note = (
-                    f"{r_type_clean} blood glucose reading of {g_val:.0f} mg/dL{date_str} evaluated as a contextual indicator. "
-                    "Single readings do not represent a diagnosis or medical prescription."
+                    f"{r_type_clean} blood glucose reading of {g_val:.0f} mg/dL{date_str} evaluated as a contextual indicator."
                 )
             except (ValueError, TypeError):
                 current_glucose = None
 
         # -------------------------------------------------------------
-        # 3. Dietary Preference Filter (Strict)
+        # 3. Dietary Preference Filters (supports multi-select)
         # -------------------------------------------------------------
-        is_veg_only = "non" not in diet_pref.lower() and "veg" in diet_pref.lower()
-        is_vegan = "vegan" in diet_pref.lower()
+        diet_lower = diet_pref.lower()
+        is_vegan = "vegan" in diet_lower
+        is_eggetarian = "eggetarian" in diet_lower
+        is_veg_only = ("veg" in diet_lower and "non" not in diet_lower and not is_eggetarian)
+        is_low_carb = "low-carb" in diet_lower or "keto" in diet_lower
 
-        if is_veg_only:
-            df = df[df["diet_type"] == "Vegetarian"]
         if is_vegan:
             df = df[df["diet_type"] == "Vegetarian"]
             dairy_pattern = "|".join([r"\b" + re.escape(k) + r"\b" for k in DAIRY_KEYWORDS])
             df = df[~df[COL_DISH].str.lower().str.contains(dairy_pattern, regex=True, na=False)]
+        elif is_eggetarian:
+            meat_pattern = "|".join([r"\b" + re.escape(k) + r"\b" for k in MEAT_FISH_KEYWORDS])
+            df = df[~df[COL_DISH].str.lower().str.contains(meat_pattern, regex=True, na=False)]
+        elif is_veg_only:
+            df = df[df["diet_type"] == "Vegetarian"]
 
         # -------------------------------------------------------------
-        # 4. Allergy / Avoidance Exclusion (Dish Name keyword check)
+        # 4. Allergy / Avoidance Exclusion
         # -------------------------------------------------------------
         exclusion_keywords = [a.lower() for a in (allergies + foods_to_avoid)]
         allergy_warnings = []
@@ -469,10 +486,22 @@ class DiabetesRecommendationEngine:
                         allergy_warnings.append(f"Excluded {removed} dish(es) containing '{kw_clean}' in title.")
 
         # -------------------------------------------------------------
-        # 5. Evaluate and Rank ALL Suitable Records Using Actual Nutrients
+        # 5. Distinguish Real Meals from Beverages and Broths
+        # (Beverages/broths never crowd out real meals in main view)
+        # -------------------------------------------------------------
+        cat_lower = (category_filter or "").strip().lower()
+        if cat_lower == "beverage":
+            df_food = df[df["category"] == "Beverage"]
+        else:
+            df_food = df[~df["category"].isin(["Broth", "Beverage"])]
+            if cat_lower != "" and cat_lower != "all":
+                df_food = df_food[df_food["category"].str.lower().str.contains(cat_lower, na=False)]
+
+        # -------------------------------------------------------------
+        # 6. Evaluate and Rank Suitable Records Using Clinical Nutrients
         # -------------------------------------------------------------
         scored_records = []
-        for _, row in df.iterrows():
+        for _, row in df_food.iterrows():
             dish_dict = self.dm.row_to_dict(row)
             score, explanation, highlights, limitations = self._evaluate_dish(
                 dish=dish_dict,
@@ -495,35 +524,41 @@ class DiabetesRecommendationEngine:
         # Sort descending by personalized recommendation score
         scored_records.sort(key=lambda x: x["recommendation_score"], reverse=True)
 
-        # Build Daily Meal Plan (Breakfast, Lunch, Snack, Dinner) from top ranked items
+        # -------------------------------------------------------------
+        # 7. Build Real Daily Meal Plan (Breakfast, Lunch, Snack, Dinner)
+        # -------------------------------------------------------------
         daily_plan = {
             "breakfast": [],
             "lunch": [],
             "snack": [],
             "dinner": []
         }
-        for item in scored_records:
-            cat_lower = item.get("category", "").lower()
-            if "breakfast" in cat_lower and len(daily_plan["breakfast"]) < 3:
-                daily_plan["breakfast"].append(item)
-            elif "snack" in cat_lower and len(daily_plan["snack"]) < 3:
-                daily_plan["snack"].append(item)
-            elif ("lunch" in cat_lower or "dinner" in cat_lower):
-                if len(daily_plan["lunch"]) < 3:
-                    daily_plan["lunch"].append(item)
-                elif len(daily_plan["dinner"]) < 3:
-                    daily_plan["dinner"].append(item)
 
-        # Category filter for list view if specified
-        if category_filter and category_filter.strip().lower() != "all":
-            target_cat = category_filter.strip().lower()
-            filtered_scored = [
-                d for d in scored_records 
-                if target_cat in d.get("category", "").lower()
-            ]
-            top_records = filtered_scored[:limit] if filtered_scored else scored_records[:limit]
-        else:
-            top_records = scored_records[:limit]
+        # Candidate pool from non-beverage dishes evaluated
+        for item in scored_records:
+            item_cat = item.get("category", "")
+            if item_cat == "Breakfast" and len(daily_plan["breakfast"]) < 2:
+                daily_plan["breakfast"].append(item)
+            elif item_cat == "Lunch/Dinner":
+                if len(daily_plan["lunch"]) < 2:
+                    daily_plan["lunch"].append(item)
+                elif len(daily_plan["dinner"]) < 2:
+                    daily_plan["dinner"].append(item)
+            elif item_cat == "Snack" and len(daily_plan["snack"]) < 1:
+                daily_plan["snack"].append(item)
+
+        # Ensure fallback for breakfast/snack if specific categories had few items in filtered sub-pool
+        if len(daily_plan["breakfast"]) < 2 or len(daily_plan["snack"]) < 1 or len(daily_plan["dinner"]) < 2:
+            all_non_bev = [d for d in scored_records if d.get("category") not in ["Beverage", "Broth"]]
+            for item in all_non_bev:
+                if len(daily_plan["breakfast"]) < 2 and item not in daily_plan["breakfast"] and item not in daily_plan["lunch"]:
+                    daily_plan["breakfast"].append(item)
+                elif len(daily_plan["dinner"]) < 2 and item not in daily_plan["lunch"] and item not in daily_plan["dinner"]:
+                    daily_plan["dinner"].append(item)
+                elif len(daily_plan["snack"]) < 1 and item not in daily_plan["lunch"] and item not in daily_plan["snack"]:
+                    daily_plan["snack"].append(item)
+
+        top_records = scored_records[:limit]
 
         return {
             "patient_context": {
@@ -552,9 +587,8 @@ class DiabetesRecommendationEngine:
             "recommendations": top_records,
             "daily_plan": daily_plan,
             "disclaimer": (
-                "Medical Disclaimer: These recommendations are informational wellness suggestions ranked from your food dataset "
-                "based on reported nutritional values and personal preferences. They do not constitute a medical diagnosis or diet prescription. "
-                "Because ingredient formulations vary by preparation, please verify full ingredients with recipe creators or your clinical dietitian."
+                "Medical Disclaimer: Suggestions are calculated from your nutritional dataset based on diabetic guidelines. "
+                "Always verify full ingredients with recipe creators or your clinical dietitian."
             )
         }
 
@@ -571,12 +605,15 @@ class DiabetesRecommendationEngine:
         bmi_category: Optional[str]
     ) -> Tuple[int, str, List[str], List[str]]:
         """
-        Evaluates a single dish using actual dataset nutrient values.
-        Returns: (score, simple_explanation, highlights, limitations).
+        Evaluates a single dish using actual dataset nutrient values and patient inputs.
+        Returns: (score, explanation, highlights, limitations).
         """
         score = 70.0
         highlights = []
         limitations = []
+
+        dish_name = str(dish.get("dish_name") or dish.get("title") or "")
+        name_lower = dish_name.lower()
 
         carbs = dish.get("carbs_g")
         sugar = dish.get("free_sugar_g")
@@ -586,204 +623,184 @@ class DiabetesRecommendationEngine:
         calories = dish.get("calories")
         sodium = dish.get("sodium_mg")
 
-        # -------------------------------------------------------------
-        # Rule 1: Free Sugar (Highest glycemic surge factor)
-        # -------------------------------------------------------------
-        sugar_phrase = "unspecified free sugar"
-        if sugar is not None:
-            if sugar == 0.0:
-                score += 14
-                sugar_phrase = "zero free sugar (0g) to avoid glucose spikes"
-                highlights.append("0g Free Sugar")
-            elif sugar <= 2.0:
-                score += 8
-                sugar_phrase = f"a low free-sugar value ({sugar}g)"
-                highlights.append(f"{sugar}g Sugar")
-            elif sugar <= 5.0:
-                score -= 4
-                sugar_phrase = f"moderate free sugar ({sugar}g)"
-            else:
-                penalty = min(25, 10 + int(sugar * 2))
-                score -= penalty
-                sugar_phrase = f"a higher free-sugar value ({sugar}g)"
-        else:
-            limitations.append("Free sugar content is not recorded in the source dataset.")
+        g_val = float(current_glucose) if current_glucose is not None else 120.0
+        is_hypo = g_val < 70.0
+        is_high = g_val >= 180.0
+        is_elevated = (g_val >= 140.0 and g_val < 180.0)
+        is_normal = (g_val >= 70.0 and g_val < 140.0)
 
-        # -------------------------------------------------------------
-        # Rule 2: Dietary Fibre (Slows absorption, flattens glucose curve)
-        # -------------------------------------------------------------
-        fibre_phrase = "minimal fibre"
-        if fibre is not None:
-            if fibre >= 5.0:
-                score += 15
-                fibre_phrase = f"substantial dietary fibre ({fibre}g) to blunt glycemic absorption"
-                highlights.append(f"{fibre}g Fibre")
-            elif fibre >= 2.5:
-                score += 8
-                fibre_phrase = f"helpful dietary fibre ({fibre}g)"
-                highlights.append(f"{fibre}g Fibre")
-            elif fibre >= 1.0:
-                fibre_phrase = f"mild dietary fibre ({fibre}g)"
-            else:
-                score -= 6
-                fibre_phrase = "low dietary fibre (<1g)"
-        else:
-            limitations.append("Dietary fibre value is unspecified in the dataset.")
-
-        # -------------------------------------------------------------
-        # Rule 3: Carbohydrate Load
-        # -------------------------------------------------------------
-        carb_phrase = "unspecified carbs"
-        if carbs is not None:
-            if carbs <= 12.0:
-                score += 12
-                carb_phrase = f"a very low carbohydrate load ({carbs}g)"
-                highlights.append(f"{carbs}g Carbs")
-            elif carbs <= 25.0:
-                score += 6
-                carb_phrase = f"manageable carbohydrates ({carbs}g)"
-            elif carbs <= 45.0:
-                score -= 4
-                carb_phrase = f"moderate-to-high carbohydrates ({carbs}g)"
-            else:
-                penalty = min(22, 8 + int((carbs - 45) * 0.4))
-                score -= penalty
-                carb_phrase = f"a high carbohydrate load ({carbs}g)"
-        else:
-            limitations.append("Carbohydrate value is not specified in the dataset.")
-
-        # -------------------------------------------------------------
-        # Rule 4: Protein Support (Promotes steady satiety)
-        # -------------------------------------------------------------
-        if protein is not None:
-            if protein >= 15.0:
-                score += 12
-                highlights.append(f"{protein}g Protein")
-            elif protein >= 7.0:
-                score += 6
-                highlights.append(f"{protein}g Protein")
-
-        # -------------------------------------------------------------
-        # Rule 5: Fats & Calorie Density
-        # -------------------------------------------------------------
-        if fat is not None:
-            if fat > 22.0:
-                score -= 8
-            elif 3.0 <= fat <= 12.0:
-                score += 4
-
-        if calories is not None:
-            if calories > 450:
-                score -= 8
-            elif calories <= 250:
-                score += 4
-
-        # -------------------------------------------------------------
-        # Rule 6: Sodium Moderation (Cardiovascular safety)
-        # -------------------------------------------------------------
-        if sodium is not None:
-            if sodium <= 140:
-                score += 5
-                highlights.append("Low Sodium")
-            elif sodium > 600:
-                score -= 8
-
-        # -------------------------------------------------------------
-        # Rule 7: Glucose-Aware Nutritional Adjustments
-        # -------------------------------------------------------------
-        if current_glucose is not None:
-            g_val = float(current_glucose)
-            if g_val >= 180.0:
-                # Elevated blood sugar: strictly reward low carbs and low sugar
-                if carbs is not None:
-                    if carbs <= 10.0:
-                        score += 18
-                        highlights.append("Glycemic Stabilizer")
-                    elif carbs > 20.0:
-                        score -= 20
-                if sugar is not None and sugar > 1.5:
-                    score -= 22
-                if fibre is not None and fibre >= 3.0:
-                    score += 12
-            elif g_val >= 140.0:
-                # Mildly elevated blood sugar
-                if carbs is not None and carbs <= 15.0:
-                    score += 10
-                    highlights.append("Gentle Carbs")
-                if sugar is not None and sugar > 3.0:
-                    score -= 12
-
-        # -------------------------------------------------------------
-        # Rule 8: Multi-Select Dietary Preferences Tailoring
-        # -------------------------------------------------------------
         diet_lower = dietary_preferences.lower()
-        if "low-carb" in diet_lower or "keto" in diet_lower:
-            if carbs is not None and carbs <= 12.0:
-                score += 14
-                highlights.append("Low-Carb Match")
-            elif carbs is not None and carbs > 30.0:
-                score -= 14
-
-        # -------------------------------------------------------------
-        # Rule 9: Multi-Select Health Focus Area Adjustments
-        # -------------------------------------------------------------
+        is_low_carb = ("low-carb" in diet_lower or "keto" in diet_lower)
         focus_lower = health_focus.lower()
-        if "glucose" in focus_lower or "control" in focus_lower:
-            if sugar is not None and sugar == 0.0:
-                score += 10
-                highlights.append("Spike Protector")
-            if fibre is not None and fibre >= 4.0:
-                score += 8
 
-        if "weight" in focus_lower or (bmi_category in ["Overweight", "Obese"]):
-            if calories is not None and calories <= 220:
+        # -------------------------------------------------------------
+        # 1. Glucose-Specific Clinical Response
+        # -------------------------------------------------------------
+        if is_hypo:
+            # Hypoglycemia: need fast-acting carbohydrates to safely raise blood sugar
+            if carbs is not None:
+                if 12.0 <= carbs <= 28.0:
+                    score += 25
+                    highlights.append("Hypo Rescue Carbs")
+                elif carbs < 5.0:
+                    score -= 15
+                elif carbs > 40.0:
+                    score -= 10
+            if sugar is not None and sugar >= 1.5:
+                score += 15
+                highlights.append("Fast Glucose")
+        elif is_high:
+            # Hyperglycemia (>= 180 mg/dL): strictly prioritize ultra-low carbs, 0g sugar, high fiber
+            if carbs is not None:
+                if carbs <= 8.0:
+                    score += 25
+                    highlights.append("Ultra-Low Carb")
+                elif carbs <= 14.0:
+                    score += 15
+                    highlights.append("Low Carbs")
+                elif carbs > 24.0:
+                    score -= 30
+            if sugar is not None:
+                if sugar == 0.0:
+                    score += 18
+                    highlights.append("0g Added Sugar")
+                elif sugar > 1.0:
+                    score -= 25
+            if fibre is not None and fibre >= 3.0:
+                score += 16
+                highlights.append(f"{fibre}g Fibre")
+            if protein is not None and protein >= 8.0:
+                score += 12
+                highlights.append(f"{protein}g Protein")
+            # Strongly penalize high glycemic potato / aloo and deep-fried breads
+            if "aloo" in name_lower or "potato" in name_lower:
+                score -= 35
+            if any(f in name_lower for f in ["poori", "puri", "bhatura", "kachori", "pakoda", "pakora"]):
+                score -= 20
+        elif is_elevated:
+            # Mildly elevated (140 - 179 mg/dL)
+            if carbs is not None:
+                if carbs <= 15.0:
+                    score += 16
+                    highlights.append("Gentle Carbs")
+                elif carbs > 30.0:
+                    score -= 18
+            if sugar is not None and sugar == 0.0:
+                score += 12
+                highlights.append("Zero Sugar")
+            if fibre is not None and fibre >= 3.0:
+                score += 12
+                highlights.append(f"{fibre}g Fibre")
+            if protein is not None and protein >= 8.0:
                 score += 8
-                highlights.append("Calorie-Light")
-            elif calories is not None and calories > 360:
-                score -= 8
+            if "aloo" in name_lower or "potato" in name_lower:
+                score -= 20
+        else:
+            # Normal range (70 - 139 mg/dL)
+            if carbs is not None:
+                if carbs <= 20.0:
+                    score += 12
+                    highlights.append(f"{carbs}g Carbs")
+                elif carbs > 40.0:
+                    score -= 15
+            if sugar is not None:
+                if sugar == 0.0:
+                    score += 12
+                    highlights.append("0g Sugar")
+                elif sugar > 3.0:
+                    score -= 14
+            if fibre is not None and fibre >= 3.0:
+                score += 12
+                highlights.append(f"{fibre}g Fibre")
+            if protein is not None and protein >= 7.0:
+                score += 10
+                highlights.append(f"{protein}g Protein")
+
+        # -------------------------------------------------------------
+        # 2. Anti-Diabetic Ingredient Recognition
+        # -------------------------------------------------------------
+        if any(k in name_lower for k in ["karela", "bitter gourd"]):
+            score += 20
+            highlights.append("Karela Anti-Spike")
+        elif any(k in name_lower for k in ["methi", "fenugreek"]):
+            score += 16
+            highlights.append("Methi Glucose Shield")
+        elif any(k in name_lower for k in ["palak", "spinach", "saag"]):
+            score += 14
+            highlights.append("Greens Fiber")
+        elif any(k in name_lower for k in ["bhindi", "okra"]):
+            score += 14
+            highlights.append("Soluble Fiber")
+        elif any(k in name_lower for k in ["moong", "black bean", "chana", "dal"]):
+            score += 12
+            highlights.append("Complex Legume")
+        elif "paneer" in name_lower:
+            score += 10
+            highlights.append("Protein Rich")
+
+        # -------------------------------------------------------------
+        # 3. Low-Carb / Keto Tailoring
+        # -------------------------------------------------------------
+        if is_low_carb:
+            if carbs is not None:
+                if carbs <= 10.0:
+                    score += 18
+                    highlights.append("Keto Compliant")
+                elif carbs > 22.0:
+                    score -= 22
+
+        # -------------------------------------------------------------
+        # 4. Multi-Select Health Focus Adjustments
+        # -------------------------------------------------------------
+        if "weight" in focus_lower or (bmi_category in ["Overweight", "Obese"]):
+            if calories is not None:
+                if calories <= 200:
+                    score += 12
+                    highlights.append("Calorie-Light")
+                elif calories > 340:
+                    score -= 15
+            if protein is not None and protein >= 10.0:
+                score += 10
+                highlights.append("Satiating Protein")
 
         if "heart" in focus_lower or "cardio" in focus_lower:
-            if sodium is not None and sodium <= 140:
-                score += 8
-                highlights.append("Heart-Friendly")
-            elif sodium is not None and sodium > 500:
-                score -= 8
+            if sodium is not None:
+                if sodium <= 140:
+                    score += 14
+                    highlights.append("Heart-Friendly")
+                elif sodium > 450:
+                    score -= 18
 
-        if "active" in focus_lower or "energy" in focus_lower or "fitness" in focus_lower:
+        if "active" in focus_lower or "fitness" in focus_lower or "energy" in focus_lower:
             if protein is not None and protein >= 12.0:
-                score += 10
+                score += 14
                 highlights.append("Muscle Recovery")
 
         if "immunity" in focus_lower or "wellness" in focus_lower:
             vit_c = dish.get("vitamin_c_mg")
             if vit_c is not None and vit_c >= 5.0:
-                score += 8
+                score += 10
                 highlights.append("Vitamin C Rich")
 
         # -------------------------------------------------------------
-        # Rule 10: Allergy & Unknown Ingredient Disclaimers
+        # 5. Build Dynamic Personalized Explanation
         # -------------------------------------------------------------
-        limitations.append(
-            "Ingredient formulations vary by preparation; please verify full ingredients with recipe creator or clinician."
-        )
-        if dish.get("has_missing_nutrients"):
-            missing_cols = []
-            if dish.get("vitamin_c_mg") is None:
-                missing_cols.append("Vitamin C")
-            if dish.get("folate_ug") is None:
-                missing_cols.append("Folate")
-            if missing_cols:
-                limitations.append(f"Micronutrient values for {', '.join(missing_cols)} are not reported in the source dataset.")
+        carb_str = f"{carbs}g" if carbs is not None else "minimal"
+        fibre_str = f"{fibre}g" if fibre is not None else "digestive"
+        sugar_str = f"{sugar}g" if sugar is not None else "0g"
 
-        # -------------------------------------------------------------
-        # Build Standardized Simple Explanation
-        # -------------------------------------------------------------
-        explanation = (
-            f"Recommended because this food has {sugar_phrase}, {carb_phrase}, "
-            f"and provides {fibre_phrase} compared with other available dataset options."
-        )
+        if is_hypo:
+            explanation = f"Recommended for low blood glucose ({g_val:.0f} mg/dL): provides gentle fast carbohydrates ({carb_str}) to safely assist recovery."
+        elif is_high:
+            explanation = f"Recommended for high glucose ({g_val:.0f} mg/dL): provides ultra-low carbohydrates ({carb_str}), {sugar_str} free sugar, and {fibre_str} fibre to stabilize blood sugar."
+        elif is_elevated:
+            explanation = f"Recommended for mildly elevated glucose ({g_val:.0f} mg/dL): balanced low-glycemic meal with {carb_str} carbs and {fibre_str} fibre."
+        else:
+            explanation = f"Recommended for your diabetes targets: provides {carb_str} carbs, {sugar_str} sugar, and {fibre_str} fibre to maintain steady energy."
 
-        final_score = int(max(15, min(99, round(score))))
+        limitations.append("Formulation varies by preparation; verify full ingredients with recipe creator or clinician.")
+
+        final_score = int(max(20, min(99, round(score))))
         return final_score, explanation, highlights[:3], limitations
 
     @staticmethod

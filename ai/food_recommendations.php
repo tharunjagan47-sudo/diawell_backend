@@ -90,10 +90,13 @@ try {
     $avoidList = $parseList($fpRow["foods_to_avoid"] ?? "");
 
     // Determine diet preference
-    $dietPref = $fpRow["preferred_diet"] ?? "";
-    if (empty($dietPref)) {
-        $diets = $parseList($hpRow["dietary_preferences"] ?? "");
-        $dietPref = !empty($diets) ? implode(", ", $diets) : "Vegetarian";
+    $diets = $parseList($hpRow["dietary_preferences"] ?? "");
+    if (!empty($diets)) {
+        $dietPref = implode(", ", $diets);
+    } elseif (!empty($fpRow["preferred_diet"])) {
+        $dietPref = $fpRow["preferred_diet"];
+    } else {
+        $dietPref = "Vegetarian";
     }
 
     // Support client overrides (array or comma-separated string)
@@ -128,11 +131,9 @@ try {
     if ($method === "POST" && (!empty($data["update_inputs"]) || !empty($data["save_preferences"]))) {
         try {
             if ($effectiveGlucose !== null) {
-                // Update users table
                 $updUser = $pdo->prepare("UPDATE users SET current_glucose_mg_dl = :g WHERE id = :id");
                 $updUser->execute([":g" => $effectiveGlucose, ":id" => $userId]);
 
-                // Insert into glucose_readings using VALID ENUM 'Random'
                 $insG = $pdo->prepare(
                     "INSERT INTO glucose_readings (user_id, glucose_value, reading_type, reading_date, reading_time, notes) 
                      VALUES (:u, :v, 'Random', CURDATE(), CURTIME(), 'Updated via Diet Screen')"
@@ -141,12 +142,13 @@ try {
             }
 
             if (!empty($dietPref)) {
-                // Sanitize preferred_diet for MySQL ENUM ('Vegetarian', 'Non-Vegetarian', 'Vegan')
                 $cleanPref = "Vegetarian";
                 if (stripos($dietPref, "non") !== false) {
                     $cleanPref = "Non-Vegetarian";
                 } elseif (stripos($dietPref, "vegan") !== false) {
                     $cleanPref = "Vegan";
+                } elseif (stripos($dietPref, "eggetarian") !== false) {
+                    $cleanPref = "Eggetarian";
                 }
 
                 $chkFp = $pdo->prepare("SELECT id FROM food_preferences WHERE user_id = :id LIMIT 1");
@@ -234,9 +236,9 @@ try {
     ];
 
     // =========================================================================
-    // 6. Fast Microservice Connection Check (prevents 3-6s hangs on Windows)
+    // 6. Fast Microservice Connection Check
     // =========================================================================
-    if (isMicroserviceAvailable($pythonServiceUrl, 0.05)) {
+    if (isMicroserviceAvailable($pythonServiceUrl, 0.2)) {
         $ch = curl_init($pythonServiceUrl . "/recommend");
         $jsonPayload = json_encode($payload);
 
@@ -289,20 +291,27 @@ try {
                 elseif (stripos($clean, "Folate") !== false) $colMap["folate"] = $idx;
             }
 
-            // Keyword definitions matching clinical recommender engine
-            $nonVegWords = ["chicken", "mutton", "fish", "egg", "prawn", "keema", "meat", "pork", "beef", "shrimp", "seafood", "duck", "crab", "omlet", "omelette", "bhurji"];
-            $eggWords = ["egg", "omlet", "omelette", "bhurji"];
+            // Enhanced keyword dictionaries
+            $meatFishWords = ["chicken", "mutton", "fish", "prawn", "keema", "gosht", "meat", "crab", "pork", "beef", "shrimp", "duck", "pomfret", "salmon", "tuna", "seafood", "tikka (chicken)", "ham", "bacon", "lamb"];
+            $eggWords = ["egg", "anda", "omlet", "omelette", "bhurji", "poached egg", "boiled egg", "fried egg"];
+            $allNonVegWords = array_merge($meatFishWords, $eggWords);
             $dairyWords = ["paneer", "milk", "curd", "dahi", "cheese", "butter", "ghee", "malai", "lassi", "raita", "khoya", "cream", "kheer", "rabri"];
-            $breakfastWords = ["oats", "idli", "dosa", "poha", "upma", "paratha", "pancake", "toast", "cornflakes", "porridge", "thepla", "cheela", "chilla", "puri", "upama"];
-            $snackWords = ["snack", "chaat", "tikki", "pakoda", "pakora", "samosa", "cutlet", "biscuit", "cookie", "roll", "kebab", "vada", "bhel", "chivda", "sprouts", "salad", "soup"];
-            $beverageWords = ["tea", "chai", "coffee", "cooler", "juice", "drink", "shake", "smoothie", "water", "punch", "lemonade", "cocoa"];
+            $beverageWords = ["tea", "chai", "coffee", "cooler", "juice", "drink", "shake", "smoothie", "water", "punch", "lemonade", "cocoa", "sharbat", "squash", "soda", "lassi", "lem-o-gin", "cordial", "syrup"];
+            $brothWords = ["brown stock", "vegetable stock", "mutton stock", "chicken stock", "beef stock", "meat stock"];
+            $breakfastWords = ["oats", "idli", "dosa", "poha", "upma", "paratha", "parantha", "pancake", "toast", "cornflakes", "porridge", "thepla", "cheela", "chilla", "puri", "sandwich", "daliya", "omelet", "omlet", "bhurji", "dhokla", "egg sandwich"];
+            $snackWords = ["soup", "chaat", "tikki", "pakoda", "pakora", "samosa", "cutlet", "biscuit", "cookie", "roll", "kebab", "vada", "bhel", "chivda", "salad", "raita", "dip", "chutney", "murukku", "snack"];
 
             $dietLower = strtolower($dietPref);
-            $isVegUser = (strpos($dietLower, "non") === false && strpos($dietLower, "veg") !== false);
             $isVegan = (strpos($dietLower, "vegan") !== false);
             $isEggetarian = (strpos($dietLower, "eggetarian") !== false);
+            $isVegUser = (strpos($dietLower, "veg") !== false && strpos($dietLower, "non") === false && !$isEggetarian);
             $isLowCarb = (strpos($dietLower, "low-carb") !== false || strpos($dietLower, "keto") !== false);
             $focusLower = strtolower($healthFocus);
+
+            $gVal = $effectiveGlucose !== null ? $effectiveGlucose : 120.0;
+            $isHypo = $gVal < 70.0;
+            $isHigh = $gVal >= 180.0;
+            $isElevated = ($gVal >= 140.0 && $gVal < 180.0);
 
             $csvDishes = [];
             $itemId = 1001;
@@ -313,52 +322,57 @@ try {
 
                 $dishLower = strtolower($dishName);
 
-                // Classify Category
+                // 1. Precise Category Classification
                 $dishCat = "Lunch/Dinner";
-                foreach ($beverageWords as $bw) {
-                    if (strpos($dishLower, $bw) !== false) { $dishCat = "Beverage"; break; }
+                foreach ($brothWords as $bw) {
+                    if (stripos($dishLower, $bw) !== false) { $dishCat = "Broth"; break; }
+                }
+                if ($dishCat === "Lunch/Dinner") {
+                    foreach ($beverageWords as $bw) {
+                        if (stripos($dishLower, $bw) !== false) { $dishCat = "Beverage"; break; }
+                    }
                 }
                 if ($dishCat === "Lunch/Dinner") {
                     foreach ($breakfastWords as $bw) {
-                        if (strpos($dishLower, $bw) !== false) { $dishCat = "Breakfast"; break; }
+                        if (stripos($dishLower, $bw) !== false) { $dishCat = "Breakfast"; break; }
                     }
                 }
                 if ($dishCat === "Lunch/Dinner") {
                     foreach ($snackWords as $sw) {
-                        if (strpos($dishLower, $sw) !== false) { $dishCat = "Snack"; break; }
+                        if (stripos($dishLower, $sw) !== false) { $dishCat = "Snack"; break; }
                     }
                 }
 
-                // Classify Diet Type
-                $hasEgg = false;
-                foreach ($eggWords as $ew) {
-                    if (strpos($dishLower, $ew) !== false) { $hasEgg = true; break; }
-                }
+                // 2. Classify Diet Type
                 $isNonVeg = false;
-                foreach ($nonVegWords as $w) {
-                    if (strpos($dishLower, $w) !== false) {
+                foreach ($allNonVegWords as $w) {
+                    if (stripos($dishLower, $w) !== false) {
                         $isNonVeg = true;
                         break;
                     }
                 }
                 $dishDietType = $isNonVeg ? "Non-Vegetarian" : "Vegetarian";
 
-                // Dietary preference filtering
+                // 3. Dietary preference filtering
                 if ($isVegan) {
                     if ($isNonVeg) { $itemId++; continue; }
                     $hasDairy = false;
                     foreach ($dairyWords as $dw) {
-                        if (strpos($dishLower, $dw) !== false) { $hasDairy = true; break; }
+                        if (stripos($dishLower, $dw) !== false) { $hasDairy = true; break; }
                     }
                     if ($hasDairy) { $itemId++; continue; }
                 } elseif ($isEggetarian) {
-                    if ($isNonVeg && !$hasEgg) { $itemId++; continue; }
+                    $hasMeat = false;
+                    foreach ($meatFishWords as $mw) {
+                        if (stripos($dishLower, $mw) !== false) { $hasMeat = true; break; }
+                    }
+                    if ($hasMeat) { $itemId++; continue; }
                 } elseif ($isVegUser && $dishDietType === "Non-Vegetarian") {
                     $itemId++;
                     continue;
                 }
 
-                // Allergen & foods to avoid exclusion
+                // 4. Allergen & foods to avoid exclusion
                 $excluded = false;
                 foreach (array_merge($allAllergies, $avoidList) as $kw) {
                     $kwClean = trim(preg_replace('/[^\w\s]/', '', strtolower($kw)));
@@ -370,6 +384,17 @@ try {
                 if ($excluded) {
                     $itemId++;
                     continue;
+                }
+
+                // 5. Exclude Beverages & Broths from main food recommendations (unless specifically requested)
+                $catLower = strtolower($category);
+                if ($catLower === "beverage") {
+                    if ($dishCat !== "Beverage") { $itemId++; continue; }
+                } else {
+                    if ($dishCat === "Beverage" || $dishCat === "Broth") { $itemId++; continue; }
+                    if ($catLower !== "all" && !empty($catLower)) {
+                        if (stripos($dishCat, $catLower) === false) { $itemId++; continue; }
+                    }
                 }
 
                 $cal = isset($colMap["calories"]) && is_numeric($row[$colMap["calories"]]) ? round((float)$row[$colMap["calories"]], 1) : 150.0;
@@ -384,131 +409,152 @@ try {
                 $highlights = [];
                 $score = 70.0;
 
-                // Rule 1: Free Sugar (Highest glycemic surge factor)
-                if ($sugar == 0.0) {
-                    $score += 14;
-                    $highlights[] = "0g Free Sugar";
-                } elseif ($sugar <= 2.0) {
-                    $score += 8;
-                    $highlights[] = "{$sugar}g Sugar";
-                } elseif ($sugar <= 5.0) {
-                    $score -= 4;
-                } else {
-                    $score -= min(25, 10 + intval($sugar * 2));
-                }
-
-                // Rule 2: Dietary Fibre (Slows absorption, flattens curve)
-                if ($fibre >= 5.0) {
-                    $score += 15;
-                    $highlights[] = "{$fibre}g Fibre";
-                } elseif ($fibre >= 2.5) {
-                    $score += 8;
-                    $highlights[] = "{$fibre}g Fibre";
-                } elseif ($fibre < 1.0) {
-                    $score -= 6;
-                }
-
-                // Rule 3: Carbohydrate Load
-                if ($carbs <= 12.0) {
-                    $score += 12;
-                    $highlights[] = "{$carbs}g Carbs";
-                } elseif ($carbs <= 25.0) {
-                    $score += 6;
-                    $highlights[] = "{$carbs}g Carbs";
-                } elseif ($carbs <= 45.0) {
-                    $score -= 4;
-                } else {
-                    $score -= min(22, 8 + intval(($carbs - 45) * 0.4));
-                }
-
-                // Rule 4: Protein Support
-                if ($protein >= 15.0) {
-                    $score += 12;
-                    $highlights[] = "{$protein}g Protein";
-                } elseif ($protein >= 7.0) {
-                    $score += 6;
-                    $highlights[] = "{$protein}g Protein";
-                }
-
-                // Rule 5: Fats & Calorie Density
-                if ($fat > 22.0) $score -= 8;
-                elseif ($fat >= 3.0 && $fat <= 12.0) $score += 4;
-                if ($cal > 450) $score -= 8;
-                elseif ($cal <= 250) $score += 4;
-
-                // Rule 6: Sodium Moderation
-                if ($sodium <= 140) {
-                    $score += 5;
-                    $highlights[] = "Low Sodium";
-                } elseif ($sodium > 600) {
-                    $score -= 8;
-                }
-
-                // Rule 7: DYNAMIC GLUCOSE-AWARE SCORING
-                if ($effectiveGlucose !== null) {
-                    if ($effectiveGlucose >= 180.0) {
-                        // Hyperglycemia: Reward strict low-carb & low sugar
-                        if ($carbs <= 10.0) {
-                            $score += 18;
-                            $highlights[] = "Glycemic Stabilizer";
-                        } elseif ($carbs > 20.0) {
-                            $score -= 20;
-                        }
-                        if ($sugar > 1.5) $score -= 22;
-                        if ($fibre >= 3.0) $score += 12;
-                    } elseif ($effectiveGlucose >= 140.0) {
-                        // Mildly Elevated: Reward moderate-low carbs
-                        if ($carbs <= 15.0) {
-                            $score += 10;
-                            $highlights[] = "Gentle Carbs";
-                        }
-                        if ($sugar > 3.0) $score -= 12;
-                        if ($fibre >= 3.0) $score += 6;
-                    } elseif ($effectiveGlucose < 70.0) {
-                        // Hypoglycemia: Prioritize fast-acting carbohydrates
-                        if ($carbs >= 15.0) $score += 15;
-                        if ($sugar >= 2.0) $score += 10;
+                // 6. Clinical Glucose Scoring
+                if ($isHypo) {
+                    if ($carbs >= 12.0 && $carbs <= 28.0) {
+                        $score += 25;
+                        $highlights[] = "Hypo Rescue Carbs";
+                    } elseif ($carbs < 5.0) {
+                        $score -= 15;
                     }
-                }
-
-                // Rule 8: Multi-Select Low-Carb / Keto Tailoring
-                if ($isLowCarb) {
-                    if ($carbs <= 12.0) {
-                        $score += 14;
-                        $highlights[] = "Low-Carb Match";
+                    if ($sugar >= 1.5) {
+                        $score += 15;
+                        $highlights[] = "Fast Glucose";
+                    }
+                } elseif ($isHigh) {
+                    if ($carbs <= 8.0) {
+                        $score += 25;
+                        $highlights[] = "Ultra-Low Carb";
+                    } elseif ($carbs <= 14.0) {
+                        $score += 15;
+                        $highlights[] = "Low Carbs";
+                    } elseif ($carbs > 24.0) {
+                        $score -= 30;
+                    }
+                    if ($sugar == 0.0) {
+                        $score += 18;
+                        $highlights[] = "0g Added Sugar";
+                    } elseif ($sugar > 1.0) {
+                        $score -= 25;
+                    }
+                    if ($fibre >= 3.0) {
+                        $score += 16;
+                        $highlights[] = "{$fibre}g Fibre";
+                    }
+                    if ($protein >= 8.0) {
+                        $score += 12;
+                        $highlights[] = "{$protein}g Protein";
+                    }
+                    if (strpos($dishLower, "aloo") !== false || strpos($dishLower, "potato") !== false) {
+                        $score -= 35;
+                    }
+                    if (strpos($dishLower, "poori") !== false || strpos($dishLower, "puri") !== false || strpos($dishLower, "bhatura") !== false || strpos($dishLower, "kachori") !== false || strpos($dishLower, "pakoda") !== false) {
+                        $score -= 20;
+                    }
+                } elseif ($isElevated) {
+                    if ($carbs <= 15.0) {
+                        $score += 16;
+                        $highlights[] = "Gentle Carbs";
                     } elseif ($carbs > 30.0) {
+                        $score -= 18;
+                    }
+                    if ($sugar == 0.0) {
+                        $score += 12;
+                        $highlights[] = "Zero Sugar";
+                    }
+                    if ($fibre >= 3.0) {
+                        $score += 12;
+                        $highlights[] = "{$fibre}g Fibre";
+                    }
+                    if ($protein >= 8.0) {
+                        $score += 8;
+                    }
+                    if (strpos($dishLower, "aloo") !== false || strpos($dishLower, "potato") !== false) {
+                        $score -= 20;
+                    }
+                } else {
+                    if ($carbs <= 20.0) {
+                        $score += 12;
+                        $highlights[] = "{$carbs}g Carbs";
+                    } elseif ($carbs > 40.0) {
+                        $score -= 15;
+                    }
+                    if ($sugar == 0.0) {
+                        $score += 12;
+                        $highlights[] = "0g Sugar";
+                    } elseif ($sugar > 3.0) {
                         $score -= 14;
                     }
+                    if ($fibre >= 3.0) {
+                        $score += 12;
+                        $highlights[] = "{$fibre}g Fibre";
+                    }
+                    if ($protein >= 7.0) {
+                        $score += 10;
+                        $highlights[] = "{$protein}g Protein";
+                    }
                 }
 
-                // Rule 9: Multi-Select Health Focus Tailoring
-                if (strpos($focusLower, "glucose") !== false || strpos($focusLower, "control") !== false) {
-                    if ($sugar == 0.0) { $score += 10; $highlights[] = "Spike Protector"; }
-                    if ($fibre >= 4.0) $score += 8;
+                // Anti-Diabetic Ingredient Recognition
+                if (strpos($dishLower, "karela") !== false || strpos($dishLower, "bitter gourd") !== false) {
+                    $score += 18;
+                    $highlights[] = "Karela Anti-Spike";
+                } elseif (strpos($dishLower, "methi") !== false || strpos($dishLower, "fenugreek") !== false) {
+                    $score += 14;
+                    $highlights[] = "Methi Glucose Shield";
+                } elseif (strpos($dishLower, "palak") !== false || strpos($dishLower, "spinach") !== false || strpos($dishLower, "saag") !== false) {
+                    $score += 10;
+                    $highlights[] = "Greens Fiber";
+                } elseif (strpos($dishLower, "bhindi") !== false || strpos($dishLower, "okra") !== false) {
+                    $score += 12;
+                    $highlights[] = "Soluble Fiber";
+                } elseif (strpos($dishLower, "moong") !== false || strpos($dishLower, "sprout") !== false || strpos($dishLower, "black bean") !== false) {
+                    $score += 10;
+                    $highlights[] = "Complex Legume";
                 }
+
+                // Low-Carb / Keto Bonus
+                if ($isLowCarb) {
+                    if ($carbs <= 10.0) {
+                        $score += 18;
+                        $highlights[] = "Keto Compliant";
+                    } elseif ($carbs > 22.0) {
+                        $score -= 22;
+                    }
+                }
+
+                // Health Focus Tailoring
                 if (strpos($focusLower, "weight") !== false) {
-                    if ($cal <= 220) { $score += 8; $highlights[] = "Calorie-Light"; }
-                    elseif ($cal > 360) $score -= 8;
+                    if ($cal <= 200) { $score += 12; $highlights[] = "Calorie-Light"; }
+                    elseif ($cal > 340) $score -= 15;
+                    if ($protein >= 10.0) { $score += 10; $highlights[] = "Satiating Protein"; }
                 }
                 if (strpos($focusLower, "heart") !== false || strpos($focusLower, "cardio") !== false) {
-                    if ($sodium <= 140) { $score += 8; $highlights[] = "Heart-Friendly"; }
-                    elseif ($sodium > 500) $score -= 8;
+                    if ($sodium <= 140) { $score += 14; $highlights[] = "Heart-Friendly"; }
+                    elseif ($sodium > 450) $score -= 18;
                 }
-                if (strpos($focusLower, "active") !== false || strpos($focusLower, "energy") !== false || strpos($focusLower, "fitness") !== false) {
-                    if ($protein >= 12.0) { $score += 10; $highlights[] = "Muscle Recovery"; }
+                if (strpos($focusLower, "active") !== false || strpos($focusLower, "fitness") !== false || strpos($focusLower, "energy") !== false) {
+                    if ($protein >= 12.0) { $score += 14; $highlights[] = "Muscle Recovery"; }
                 }
                 if (strpos($focusLower, "immunity") !== false || strpos($focusLower, "wellness") !== false) {
-                    if ($vitC !== null && $vitC >= 5.0) { $score += 8; $highlights[] = "Immune Boost"; }
+                    if ($vitC !== null && $vitC >= 5.0) { $score += 10; $highlights[] = "Vitamin C Rich"; }
                 }
 
-                $sugarDesc = $sugar <= 1.0 ? "low free sugar ({$sugar}g)" : "moderate free sugar ({$sugar}g)";
-                $carbDesc = $carbs <= 15.0 ? "low carbohydrate load ({$carbs}g)" : "manageable carbohydrates ({$carbs}g)";
-                $fibreDesc = $fibre >= 3.0 ? "high dietary fibre ({$fibre}g)" : "fibre ({$fibre}g)";
-
                 $netCarbs = max(0.0, $carbs - $fibre);
-                $giLevel = ($netCarbs <= 15.0) ? "Low" : (($netCarbs <= 30.0) ? "Moderate" : "High");
+                $giLevel = ($netCarbs <= 12.0 && $sugar <= 2.0) ? "Low" : (($netCarbs <= 28.0 && $sugar <= 5.0) ? "Moderate" : "High");
                 $giColor = ($giLevel === "Low") ? "#2E7D32" : (($giLevel === "Moderate") ? "#E65100" : "#C62828");
                 $giBg = ($giLevel === "Low") ? "#E8F5E9" : (($giLevel === "Moderate") ? "#FFF3E0" : "#FFEBEE");
+
+                // Dynamic clinical explanation
+                if ($isHypo) {
+                    $reason = "Recommended for low blood glucose (" . round($gVal) . " mg/dL): provides gentle fast carbohydrates ({$carbs}g) to safely assist recovery.";
+                } elseif ($isHigh) {
+                    $reason = "Recommended for high glucose (" . round($gVal) . " mg/dL): provides ultra-low carbohydrates ({$carbs}g), {$sugar}g free sugar, and {$fibre}g fibre to stabilize blood sugar.";
+                } elseif ($isElevated) {
+                    $reason = "Recommended for mildly elevated glucose (" . round($gVal) . " mg/dL): balanced low-glycemic meal with {$carbs}g carbs and {$fibre}g fibre.";
+                } else {
+                    $reason = "Recommended for your diabetes targets: provides {$carbs}g carbs, {$sugar}g sugar, and {$fibre}g fibre to maintain steady energy.";
+                }
 
                 $csvDishes[] = [
                     "id" => $itemId,
@@ -530,8 +576,8 @@ try {
                     "diet_type" => $dishDietType,
                     "portion" => "100 g portion basis",
                     "icon" => $isNonVeg ? "🍗" : "🥗",
-                    "recommendation_score" => (int) min(98, max(20, round($score))),
-                    "recommendation_reason" => "Recommended because this food provides {$sugarDesc}, {$carbDesc}, and {$fibreDesc} suitable for your diabetic targets.",
+                    "recommendation_score" => (int) min(99, max(20, round($score))),
+                    "recommendation_reason" => $reason,
                     "highlights" => array_values(array_unique(array_slice($highlights, 0, 3))),
                     "limitations" => ["Formulation varies by preparation; verify full ingredients with recipe creator or clinician."],
                     "glycemic_impact" => [
@@ -573,15 +619,20 @@ try {
                 }
             }
 
-            // Category filter for list view if specified
-            $filteredDishes = $csvDishes;
-            if ($category !== "All" && !empty($category)) {
-                $filteredDishes = array_values(array_filter($csvDishes, function($d) use ($category) {
-                    return strcasecmp($d["category"], $category) === 0;
-                }));
+            // Fallback fill for any underfilled slot
+            foreach ($csvDishes as $d) {
+                if (count($dailyPlan["breakfast"]) < 2 && !in_array($d, $dailyPlan["breakfast"]) && !in_array($d, $dailyPlan["lunch"])) {
+                    $dailyPlan["breakfast"][] = $d;
+                }
+                if (count($dailyPlan["dinner"]) < 2 && !in_array($d, $dailyPlan["lunch"]) && !in_array($d, $dailyPlan["dinner"])) {
+                    $dailyPlan["dinner"][] = $d;
+                }
+                if (count($dailyPlan["snack"]) < 1 && !in_array($d, $dailyPlan["lunch"]) && !in_array($d, $dailyPlan["snack"])) {
+                    $dailyPlan["snack"][] = $d;
+                }
             }
 
-            $topDishes = array_slice($filteredDishes, 0, $limit);
+            $topDishes = array_slice($csvDishes, 0, $limit);
 
             respond(true, "Personalized food recommendations (CSV dataset direct)", 200, [
                 "patient_context" => [
@@ -609,78 +660,7 @@ try {
         }
     }
 
-    // 8. Fallback to MySQL food_items table if CSV file was not readable
-    $fallbackStmt = $pdo->prepare(
-        "SELECT id, name AS title, category, diet_type, `portion`, calories, carbs_g, protein_g, fat_g, fiber_g, glycemic_index, icon, health_benefits
-         FROM food_items
-         WHERE diet_type = :pref OR :is_non_veg = 1
-         ORDER BY CASE WHEN fiber_g >= 3.0 THEN 0 ELSE 1 END, carbs_g ASC
-         LIMIT :lim"
-    );
-    $isNonVeg = (strcasecmp($dietPref, "Non-Vegetarian") === 0) ? 1 : 0;
-    $fallbackStmt->bindValue(":pref", $dietPref, PDO::PARAM_STR);
-    $fallbackStmt->bindValue(":is_non_veg", $isNonVeg, PDO::PARAM_INT);
-    $fallbackStmt->bindValue(":lim", $limit, PDO::PARAM_INT);
-    $fallbackStmt->execute();
-    $fallbackItems = $fallbackStmt->fetchAll();
-
-    $fallbackResults = [];
-    foreach ($fallbackItems as $item) {
-        $fallbackResults[] = [
-            "id" => (int) $item["id"],
-            "title" => $item["title"],
-            "dish_name" => $item["title"],
-            "calories" => (float) $item["calories"],
-            "calories_label" => "{$item["calories"]} kcal",
-            "carbs_g" => (float) $item["carbs_g"],
-            "protein_g" => (float) $item["protein_g"],
-            "fat_g" => (float) $item["fat_g"],
-            "free_sugar_g" => 0.0,
-            "fibre_g" => (float) $item["fiber_g"],
-            "sodium_mg" => 180.0,
-            "category" => $item["category"],
-            "diet_type" => $item["diet_type"],
-            "portion" => $item["portion"],
-            "icon" => $item["icon"] ?? "🥣",
-            "recommendation_score" => 90,
-            "recommendation_reason" => "High dietary fibre supports stable glycemic control.",
-            "highlights" => ["Fiber " . $item["fiber_g"] . "g"],
-            "limitations" => ["Formulations vary by preparation; verify ingredients."],
-            "glycemic_impact" => [
-                "level" => $item["glycemic_index"] ?? "Low",
-                "badge" => ($item["glycemic_index"] ?? "Low") . " Glycemic Index",
-                "color" => "#2E7D32",
-                "bg_color" => "#E8F5E9",
-                "description" => "Gradual glucose absorption."
-            ]
-        ];
-    }
-
-    respond(true, "Personalized food recommendations (fallback)", 200, [
-        "patient_context" => [
-            "diabetes_type" => $userRow["diabetes_type"] ?? "Type 2",
-            "current_glucose_mg_dl" => $effectiveGlucose,
-            "target_glucose_mg_dl" => (float) ($userRow["target_glucose_mg_dl"] ?? 120.0),
-            "reading_type" => $readingType,
-            "reading_date" => $readingDate,
-            "glucose_status" => $glucoseStatus,
-            "dietary_preference" => $dietPref,
-            "allergies" => $allAllergies,
-            "health_focus" => $healthFocus,
-            "activity_level" => $hpRow["activity_level"] ?? "Moderate",
-            "category_filter" => $category
-        ],
-        "hypoglycemia_alert" => $hypoAlert,
-        "recommendations_count" => count($fallbackResults),
-        "recommendations" => $fallbackResults,
-        "daily_plan" => [
-            "breakfast" => array_slice($fallbackResults, 0, 2),
-            "lunch" => array_slice($fallbackResults, 2, 2),
-            "snack" => array_slice($fallbackResults, 4, 1),
-            "dinner" => array_slice($fallbackResults, 5, 2)
-        ],
-        "disclaimer" => "Medical Disclaimer: Suggested foods are based on your diabetes health profile."
-    ]);
+    respond(false, "Food nutrition dataset file could not be loaded.", 500);
 
 } catch (PDOException $e) {
     error_log("Food recommendations error: " . $e->getMessage());
