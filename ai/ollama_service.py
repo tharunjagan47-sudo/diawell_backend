@@ -108,10 +108,13 @@ class OllamaService:
         self,
         message: str,
         requested_model: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        rag_context: Optional[str] = None,
+        sources: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Communicate with the locally installed Ollama model to generate a concise, natural chat response.
+        If rag_context is provided, grounds the answer in verified dataset facts with source attribution.
         Uses only local Ollama models; no external APIs.
         """
         if not message or not message.strip():
@@ -125,12 +128,27 @@ class OllamaService:
         detail_keywords = ["detail", "detailed", "explain in detail", "elaborate", "in depth", "in-depth", "comprehensive", "step by step", "step-by-step"]
         is_detailed = any(k in msg_lower for k in detail_keywords)
 
-        # Configure Ollama generation options: ~200 token limit to guarantee concise answers without cutting off critical warnings
-        token_limit = 500 if is_detailed else 200
+        # Configure Ollama generation options: ~200-250 token limit to guarantee concise answers without cutting off critical warnings
+        token_limit = 500 if is_detailed else (260 if rag_context else 200)
+
+        if rag_context:
+            user_content = (
+                f"[VERIFIED DATASET INFORMATION]\n{rag_context}\n\n"
+                f"[USER QUESTION]\n{message.strip()}\n\n"
+                "INSTRUCTIONS:\n"
+                "1. Answer the user's question directly using the verified dataset information above.\n"
+                "2. State actual values (calories, carbohydrates, MET values, active salts, strengths) accurately from the verified information.\n"
+                "3. Do NOT invent or assume values not present in the verified dataset.\n"
+                "4. Keep the answer concise (normally 2 to 5 sentences).\n"
+                "5. Never recommend starting, stopping, or altering prescription medications or dosages.\n"
+                "6. Conclude with a brief source credit (e.g. '(Source: Indian Food Nutrition Dataset)' or '(Source: 2024 Adult Compendium)')."
+            )
+        else:
+            user_content = message.strip()
 
         messages = [
             {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": message.strip()}
+            {"role": "user", "content": user_content}
         ]
 
         options = {
@@ -139,7 +157,7 @@ class OllamaService:
         }
 
         try:
-            logger.info(f"Dispatching chat request to local Ollama model: '{active_model}' (num_predict={token_limit})")
+            logger.info(f"Dispatching chat request to local Ollama model: '{active_model}' (num_predict={token_limit}, RAG={'Yes' if rag_context else 'No'})")
             response = self.client.chat(
                 model=active_model,
                 messages=messages,
@@ -156,7 +174,8 @@ class OllamaService:
             return {
                 "response": reply_text.strip(),
                 "model": active_model,
-                "done": True
+                "done": True,
+                "has_rag": bool(rag_context)
             }
 
         except Exception as e:

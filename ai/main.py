@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
 from ollama_service import OllamaService
+from rag_service import RAGService
 
 # Configure logging
 logging.basicConfig(
@@ -19,8 +20,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("DiaWell.Main")
 
-# Initialize Ollama service pointing to local instance
+# Initialize Ollama and RAG services
 ollama_service = OllamaService()
+rag_service = RAGService()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -123,10 +125,18 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/", summary="Health Check")
 async def health_check():
     """
-    Health check endpoint verifying the service status and local Ollama connection.
-    Reads actual installed model names directly from Ollama.
+    Health check endpoint verifying the service status, local Ollama connection,
+    and ChromaDB vector knowledge collections status.
     """
     health = ollama_service.health_check()
+
+    rag_stats = {}
+    for c_name in ["diawell_food_nutrition", "diawell_physical_activities", "diawell_diabetes_meds", "diawell_clinical_guidelines"]:
+        try:
+            col = rag_service.get_collection(c_name)
+            rag_stats[c_name] = col.count() if col else 0
+        except Exception:
+            rag_stats[c_name] = "unavailable"
 
     if health.get("ollama_connected"):
         return {
@@ -134,11 +144,12 @@ async def health_check():
             "message": "DiaWell Local AI Assistant service is healthy and connected to Ollama.",
             "response": {
                 "status": "healthy",
-                "service": "DiaWell Local Python AI Service",
+                "service": "DiaWell Local Python AI Service with RAG",
                 "active_model": health.get("active_model"),
                 "installed_models": health.get("installed_models"),
                 "total_models": health.get("models_count", 0),
-                "ollama_host": health.get("host")
+                "ollama_host": health.get("host"),
+                "rag_collections": rag_stats
             }
         }
     else:
@@ -150,7 +161,8 @@ async def health_check():
                 "response": {
                     "status": "unhealthy",
                     "ollama_host": health.get("host"),
-                    "details": health.get("error")
+                    "details": health.get("error"),
+                    "rag_collections": rag_stats
                 }
             }
         )
@@ -159,20 +171,36 @@ async def health_check():
 async def chat_endpoint(payload: ChatRequest):
     """
     Receives user message and returns contextual AI response from locally installed Ollama.
-    Reads the actual installed Ollama model name instead of assuming one.
+    Leverages ChromaDB RAG to ground responses in verified food, activity, and medicine datasets.
     """
     try:
+        # 1. Retrieve RAG context if applicable
+        rag_data = rag_service.retrieve_context(payload.message)
+        rag_context = rag_data.get("context_text") if rag_data.get("has_context") else None
+        sources = rag_data.get("sources", [])
+        category = rag_data.get("category", "general")
+
+        # 2. Generate response via Ollama
         result = ollama_service.generate_chat_response(
             message=payload.message,
-            requested_model=payload.model
+            requested_model=payload.model,
+            rag_context=rag_context,
+            sources=sources
         )
 
         model_used = result.get("model", "local-ollama")
-        return {
+        response_data = {
             "success": True,
             "message": f"AI response generated successfully using '{model_used}'.",
             "response": result.get("response")
         }
+
+        # Include source metadata if RAG context was used
+        if sources:
+            response_data["sources"] = sources
+            response_data["rag_category"] = category
+
+        return response_data
 
     except ConnectionError as ce:
         logger.error(f"Ollama connection error: {ce}")
