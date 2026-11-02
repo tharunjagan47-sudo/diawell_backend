@@ -135,13 +135,14 @@ class OllamaService:
             user_content = (
                 f"[VERIFIED DATASET INFORMATION]\n{rag_context}\n\n"
                 f"[USER QUESTION]\n{message.strip()}\n\n"
-                "INSTRUCTIONS:\n"
-                "1. Answer the user's question directly using the verified dataset information above.\n"
-                "2. State actual values (calories, carbohydrates, MET values, active salts, strengths) accurately from the verified information.\n"
-                "3. Do NOT invent or assume values not present in the verified dataset.\n"
-                "4. Keep the answer concise (normally 2 to 5 sentences).\n"
-                "5. Never recommend starting, stopping, or altering prescription medications or dosages.\n"
-                "6. Conclude with a brief source credit (e.g. '(Source: Indian Food Nutrition Dataset)' or '(Source: 2024 Adult Compendium)')."
+                "INSTRUCTIONS FOR VERIFIED DATASET GROUNDING:\n"
+                "1. State actual values (calories, carbohydrates, fiber, MET values, active salts, strengths) strictly from the verified information.\n"
+                "2. Note that all nutritional values from the dataset are on a per 100g basis.\n"
+                "3. Fiber Truthfulness: Never claim or recommend a food as 'high fiber' unless its fiber is at least 3.0g per 100g. Foods with under 1.5g fiber (such as Egg pakoras with only 0.86g/0.9g fiber) are LOW in fiber. Eggs and meats naturally contain virtually zero fiber.\n"
+                "4. Calorie & Fat Awareness: Deep-fried foods like pakoras have very high calories (~710 kcal/100g) and very high fat (~76g/100g). If asked about deep-fried foods, point out their high calorie/fat content honestly.\n"
+                "5. Source Integrity: ONLY cite '(Source: Indian Food Nutrition Dataset)' or '(Source: 2024 Adult Compendium)' when the retrieved facts directly support your answer. Never label an answer as verified if the underlying data contradicts it.\n"
+                "6. Keep the answer concise, natural and conversational (normally 2 to 5 sentences).\n"
+                "7. Never recommend starting, stopping, or altering prescription medications or dosages."
             )
         else:
             user_content = message.strip()

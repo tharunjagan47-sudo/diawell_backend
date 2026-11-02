@@ -171,10 +171,46 @@ class RAGService:
             }
 
         try:
-            results = collection.query(
-                query_texts=[query],
-                n_results=min(n_results, count)
-            )
+            # Smart Nutritional Constraint Handling for Food Queries
+            q_lower = query.lower()
+            where_filter = None
+            requested_nutritional_constraint = None
+
+            if category == "food":
+                if any(k in q_lower for k in ["high fiber", "high fibre", "rich in fiber", "fiber rich", "more fiber"]):
+                    where_filter = {"fibre_g": {"$gte": 2.5}}
+                    requested_nutritional_constraint = "high_fiber"
+                elif any(k in q_lower for k in ["low carb", "low carbohydrate", "keto"]):
+                    where_filter = {"carbs_g": {"$lte": 15.0}}
+                    requested_nutritional_constraint = "low_carb"
+                elif any(k in q_lower for k in ["low calorie", "low cal", "weight loss"]):
+                    where_filter = {"calories": {"$lte": 180.0}}
+                    requested_nutritional_constraint = "low_calorie"
+
+            # Execute query with or without where filter
+            results = None
+            constraint_fallback = False
+
+            if where_filter:
+                try:
+                    results = collection.query(
+                        query_texts=[query],
+                        n_results=min(n_results, count),
+                        where=where_filter
+                    )
+                    # If no dishes meet the strict filter, fallback to general search with an explicit audit notice
+                    if not results.get("documents") or not results["documents"][0]:
+                        results = None
+                        constraint_fallback = True
+                except Exception as fe:
+                    logger.warning(f"Filter query error ({where_filter}): {fe}. Falling back to standard query.")
+                    results = None
+
+            if results is None:
+                results = collection.query(
+                    query_texts=[query],
+                    n_results=min(n_results, count)
+                )
 
             docs = results.get("documents", [[]])[0]
             metadatas = results.get("metadatas", [[]])[0]
@@ -221,6 +257,14 @@ class RAGService:
                 }
 
             context_text = "\n".join(context_items)
+
+            # If user asked for a constraint like high-fiber, but fallback was triggered because no candidates satisfied it:
+            if constraint_fallback and requested_nutritional_constraint == "high_fiber":
+                context_text += (
+                    "\n[NUTRITIONAL FACT-CHECK AUDIT: The user asked for a 'high fiber' option, but NONE of the retrieved dishes meet the high-fiber standard (all have < 2.5g fiber per 100g). "
+                    "For example, Egg pakoras contain only 0.86g fiber per 100g, and are very high in calories (710.5 kcal) and fat (75.9g) from deep frying. "
+                    "You MUST explicitly inform the user that these dishes are NOT high in fiber, and explain that eggs and meats naturally have near-zero fiber.]"
+                )
 
             # Append safety reminder for medicine
             if category == "medicine":

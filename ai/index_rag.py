@@ -125,10 +125,10 @@ def index_food_dataset(client: chromadb.PersistentClient, embedding_fn: Embeddin
         fiber = float(row.get("Fibre (g)", 0.0) or 0.0)
         sodium = float(row.get("Sodium (mg)", 0.0) or 0.0)
 
-        # Build clean, search-friendly document text
+        # Build clean, search-friendly document text explicitly indicating per 100g basis
         doc_text = (
             f"Dish: {dish_name}. "
-            f"Nutritional profile per 100g: Calories: {cals:.1f} kcal, "
+            f"Nutritional values (per 100g edible portion): Calories: {cals:.1f} kcal, "
             f"Carbohydrates: {carbs:.1f}g, Protein: {pro:.1f}g, Fats: {fat:.1f}g, "
             f"Free Sugar: {sugar:.1f}g, Dietary Fibre: {fiber:.1f}g, Sodium: {sodium:.1f}mg."
         )
@@ -143,6 +143,7 @@ def index_food_dataset(client: chromadb.PersistentClient, embedding_fn: Embeddin
             "free_sugar_g": sugar,
             "fibre_g": fiber,
             "sodium_mg": sodium,
+            "portion_basis": "100g edible portion",
             "source": "Indian Food Nutrition Dataset"
         }
 
