@@ -76,7 +76,17 @@ class RAGService:
             if re.search(pat, q.strip()):
                 return "general"
 
-        # 2. Clinical / Blood Glucose Emergency / Lab Values (Checked BEFORE food to avoid 'sugar' false positives)
+        # 2. Physical Activity / Exercise queries (Checked before general clinical to handle "exercise with 150 sugar")
+        activity_keywords = [
+            "walk", "walking", "run", "running", "jog", "jogging", "cycle", "cycling",
+            "bicycling", "bicycle", "exercise", "workout", "cardio", "met value",
+            "metabolic equivalent", "intensity", "brisk walk", "aerobic", "steps",
+            "treadmill", "calories burned", "calorie burn"
+        ]
+        if any(k in q for k in activity_keywords):
+            return "activity"
+
+        # 3. Clinical / Blood Glucose Emergency / Lab Values
         clinical_keywords = [
             "hypoglycemia", "hyperglycemia", "hba1c", "blood sugar", "glucose reading",
             "target range", "fasting sugar", "postprandial", "ketones", "cgm",
@@ -86,26 +96,7 @@ class RAGService:
         if any(k in q for k in clinical_keywords) or re.search(r"sugar\s*(is)?\s*\d+", q):
             return "clinical"
 
-        # 3. Medicine / Drug queries
-        med_keywords = [
-            "medicine", "medication", "tablet", "capsule", "drug", "pill", "syrup",
-            "metformin", "glimepiride", "gliclazide", "sitagliptin", "dapagliflozin",
-            "empagliflozin", "pioglitazone", "voglibose", "vildagliptin", "teneligliptin",
-            "amaryl", "glycomet", "januvia", "forxiga", "jardiance", "galvus", "gemer",
-            "salt", "dosage", "active ingredient", "manufacturer", "side effect"
-        ]
-        if any(k in q for k in med_keywords):
-            return "medicine"
-
-        # 4. Physical Activity / Exercise queries
-        activity_keywords = [
-            "walk", "walking", "run", "running", "jog", "jogging", "cycle", "cycling",
-            "bicycling", "bicycle", "exercise", "workout", "cardio", "met value",
-            "metabolic equivalent", "intensity", "brisk walk", "aerobic", "steps",
-            "treadmill", "calories burned"
-        ]
-        if any(k in q for k in activity_keywords):
-            return "activity"
+        # 4. Medicine / Drug queries
 
         # 5. Food / Nutrition queries
         food_keywords = [
@@ -269,6 +260,19 @@ class RAGService:
             # Append safety reminder for medicine
             if category == "medicine":
                 context_text += "\n[SAFETY NOTICE: Prescription information is for reference only. Never recommend starting, stopping, or altering a medication or dosage. Always instruct the user to consult a doctor.]"
+
+            # Append clinical safety guidelines for physical activities
+            if category == "activity":
+                context_text += (
+                    "\n[CLINICAL EXERCISE SAFETY GUIDELINES:\n"
+                    "• Blood glucose < 70 mg/dL: Hypoglycemia. Exercise is strictly contraindicated. Immediately consume 15–20g fast-acting carbohydrates and re-test in 15 minutes.\n"
+                    "• Blood glucose 70–99 mg/dL: Hypoglycemia risk. Consume a 15g carbohydrate snack before exercise.\n"
+                    "• Blood glucose 100–249 mg/dL: Safe pre-exercise target window.\n"
+                    "• Blood glucose 250–299 mg/dL: Elevated glucose. Vigorous workouts and running are contraindicated; only light walking is permitted if ketones are negative.\n"
+                    "• Blood glucose >= 300 mg/dL: Severe hyperglycemia. Exercise is strictly contraindicated due to DKA and dehydration risks.\n"
+                    "• Calorie estimation formula: Calories = MET × Weight (kg) × (Duration in mins / 60). Clearly label as an estimate.\n"
+                    "• Disclaimer: Exercise guidance is for lifestyle support only and does not substitute for medical treatment or clinical prescription.]"
+                )
 
             return {
                 "category": category,

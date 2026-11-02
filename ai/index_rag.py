@@ -23,6 +23,7 @@ CHROMA_DB_DIR = os.path.join(BASE_DIR, "chroma_db")
 
 FOOD_CSV_PATH = os.path.join(BACKEND_DIR, "data", "Indian_Food_Nutrition_Processed.csv")
 ACTIVITY_CSV_PATH = os.path.join(BACKEND_DIR, "activity dataset", "walking_running_cycling.csv")
+ACTIVITY_ZIP_PATH = os.path.join(BACKEND_DIR, "activity dataset", "2024_adult_compendium_csv_bundle (1).zip")
 MEDS_CSV_PATH = os.path.join(BACKEND_DIR, "meds_common.csv")
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
@@ -174,35 +175,95 @@ def index_food_dataset(client: chromadb.PersistentClient, embedding_fn: Embeddin
 # =============================================================================
 def index_activities_dataset(client: chromadb.PersistentClient, embedding_fn: EmbeddingFunction, batch_size: int = 50):
     """
-    Index all 203 physical activity records with MET values and intensity categories.
-    Uses upsert to prevent duplicate records.
+    Extract and index relevant activities from walking_running_cycling.csv and
+    2024_adult_compendium_csv_bundle (1).zip with actual MET values and descriptions.
+    Uses deterministic IDs (activity_{code}) and upsert to avoid duplicate records.
     """
-    if not os.path.exists(ACTIVITY_CSV_PATH):
-        logger.error(f"Activity dataset not found at: {ACTIVITY_CSV_PATH}")
+    import zipfile
+    import io
+
+    records = {} # code -> record
+
+    # 1. Load from walking_running_cycling.csv
+    if os.path.exists(ACTIVITY_CSV_PATH):
+        logger.info(f"Reading physical activities from CSV: {ACTIVITY_CSV_PATH}")
+        df_csv = pd.read_csv(ACTIVITY_CSV_PATH)
+        for _, row in df_csv.iterrows():
+            code = str(row.get("activity_code", "")).strip()
+            cat = str(row.get("activity_category", "")).strip()
+            met = float(row.get("met_value", 0.0) or 0.0)
+            desc = str(row.get("activity_description", "")).strip()
+            if code and desc:
+                records[code] = {
+                    "code": code,
+                    "category": cat,
+                    "met_value": met,
+                    "description": desc,
+                    "source": "2024 Adult Compendium (Walking, Running, Cycling)"
+                }
+        logger.info(f"Loaded {len(records)} activities from CSV.")
+
+    # 2. Load relevant categories from 2024 Compendium zip bundle
+    relevant_categories = {
+        "Walking", "Running", "Bicycling", "Conditioning Exercise",
+        "Water Activities", "Dancing", "Sports", "Home Activities"
+    }
+
+    if os.path.exists(ACTIVITY_ZIP_PATH):
+        logger.info(f"Inspecting Compendium bundle: {ACTIVITY_ZIP_PATH}")
+        try:
+            with zipfile.ZipFile(ACTIVITY_ZIP_PATH, "r") as z:
+                if "2024_adult_compendium_all_activities.csv" in z.namelist():
+                    with z.open("2024_adult_compendium_all_activities.csv") as zf:
+                        df_zip = pd.read_csv(io.TextIOWrapper(zf, encoding="utf-8-sig"))
+                        for _, row in df_zip.iterrows():
+                            cat = str(row.get("activity_category", "")).strip()
+                            if cat in relevant_categories:
+                                code = str(row.get("activity_code", "")).strip()
+                                met = float(row.get("met_value", 0.0) or 0.0)
+                                desc = str(row.get("activity_description", "")).strip()
+                                if code and desc and code not in records:
+                                    records[code] = {
+                                        "code": code,
+                                        "category": cat,
+                                        "met_value": met,
+                                        "description": desc,
+                                        "source": "2024 Adult Compendium of Physical Activities"
+                                    }
+            logger.info(f"Total unique physical activities after Compendium bundle: {len(records)}.")
+        except Exception as ze:
+            logger.warning(f"Could not read from compendium zip: {ze}")
+
+    if not records:
+        logger.error("No activity records found to index.")
         return
 
-    logger.info(f"Reading Physical Activity dataset from: {ACTIVITY_CSV_PATH}")
-    df = pd.read_csv(ACTIVITY_CSV_PATH)
-    total_records = len(df)
-    logger.info(f"Loaded {total_records} activities. Creating collection 'diawell_physical_activities'...")
+    # Reset collection to remove any legacy formatted IDs
+    try:
+        existing_cols = [c.name for c in client.list_collections()]
+        if "diawell_physical_activities" in existing_cols:
+            client.delete_collection("diawell_physical_activities")
+            logger.info("Cleared previous 'diawell_physical_activities' collection to ensure clean IDs.")
+    except Exception as de:
+        logger.warning(f"Notice on resetting collection: {de}")
 
     collection = client.get_or_create_collection(
         name="diawell_physical_activities",
         embedding_function=embedding_fn,
-        metadata={"description": "2024 Adult Compendium of Physical Activities with MET intensity values"}
+        metadata={"description": "2024 Adult Compendium of Physical Activities with verified MET values"}
     )
 
     ids = []
     documents = []
     metadatas = []
 
-    for idx, row in df.iterrows():
-        cat = str(row.get("activity_category", "")).strip()
-        code = int(row.get("activity_code", 0) or 0)
-        met = float(row.get("met_value", 0.0) or 0.0)
-        desc = str(row.get("activity_description", "")).strip()
+    for code, item in records.items():
+        cat = item["category"]
+        met = item["met_value"]
+        desc = item["description"]
+        src = item["source"]
 
-        # Categorize intensity
+        # Categorize intensity based on standard MET ranges
         if met < 3.0:
             intensity = "Light"
         elif met < 6.0:
@@ -217,14 +278,15 @@ def index_activities_dataset(client: chromadb.PersistentClient, embedding_fn: Em
             f"Compendium Code: {code}."
         )
 
-        doc_id = f"activity_{code}_{idx + 1}"
+        # Deterministic document ID to prevent duplicates when indexing repeatedly
+        doc_id = f"activity_{code}"
         meta = {
             "activity_code": code,
             "category": cat,
             "met_value": met,
             "intensity": intensity,
             "description": desc,
-            "source": "2024 Adult Compendium (Walking, Running, Cycling)"
+            "source": src
         }
 
         ids.append(doc_id)
@@ -232,7 +294,7 @@ def index_activities_dataset(client: chromadb.PersistentClient, embedding_fn: Em
         metadatas.append(meta)
 
     total_batches = (len(ids) + batch_size - 1) // batch_size
-    logger.info(f"Upserting {len(ids)} activities in {total_batches} batches...")
+    logger.info(f"Upserting {len(ids)} unique activities into 'diawell_physical_activities' in {total_batches} batches...")
 
     t0 = time.time()
     for b_idx in range(0, len(ids), batch_size):
@@ -241,8 +303,11 @@ def index_activities_dataset(client: chromadb.PersistentClient, embedding_fn: Em
         b_metas = metadatas[b_idx:b_idx + batch_size]
 
         collection.upsert(ids=b_ids, documents=b_docs, metadatas=b_metas)
+        current_batch = (b_idx // batch_size) + 1
+        if current_batch % 3 == 0 or current_batch == total_batches:
+            logger.info(f"  Activity Batch {current_batch}/{total_batches} ({min(b_idx + batch_size, len(ids))}/{len(ids)}) complete.")
 
-    logger.info(f"Activity indexing complete! Total in collection: {collection.count()} items ({time.time() - t0:.1f}s).")
+    logger.info(f"Physical Activity indexing complete! Total in collection: {collection.count()} items ({time.time() - t0:.1f}s).")
 
 
 # =============================================================================

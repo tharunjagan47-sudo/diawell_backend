@@ -14,7 +14,7 @@ if (!$userId) {
     respond(false, "Authentication required. Please log in to get personalized activity recommendations.", 401);
 }
 
-$pythonServiceUrl = getenv("AI_SERVICE_URL") ?: "http://127.0.0.1:8001";
+$pythonServiceUrl = getenv("AI_SERVICE_URL") ?: (isMicroserviceAvailable("http://127.0.0.1:8000", 0.05) ? "http://127.0.0.1:8000" : "http://127.0.0.1:8001");
 $csvPath = __DIR__ . '/../activity dataset/walking_running_cycling.csv';
 
 try {

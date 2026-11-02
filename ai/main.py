@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ollama_service import OllamaService
 from rag_service import RAGService
+from activity_service import ActivityRecommendationService
 
 # Configure logging
 logging.basicConfig(
@@ -20,9 +21,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("DiaWell.Main")
 
-# Initialize Ollama and RAG services
+# Initialize Ollama, RAG, and Activity services
 ollama_service = OllamaService()
 rag_service = RAGService()
+activity_service = ActivityRecommendationService()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -73,6 +75,30 @@ class ChatRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("Message cannot be empty or only whitespace.")
         return v.strip()
+
+
+class ActivityRecommendationRequest(BaseModel):
+    user_id: Optional[int] = None
+    age: Optional[int] = None
+    diabetes_type: Optional[str] = "Type 2"
+    current_glucose: Optional[float] = None
+    current_glucose_mg_dl: Optional[float] = None
+    target_glucose: Optional[float] = None
+    target_glucose_mg_dl: Optional[float] = 120.0
+    height: Optional[float] = None
+    height_cm: Optional[float] = None
+    weight: Optional[float] = None
+    weight_kg: Optional[float] = None
+    preferred_activity: Optional[str] = "All"
+    fitness_level: Optional[str] = "Moderate"
+    available_time: Optional[int] = None
+    available_time_mins: Optional[int] = None
+    reading_type: Optional[str] = None
+    reading_date: Optional[str] = None
+    reading_time: Optional[str] = None
+    physical_limitations: Optional[list] = []
+    medications: Optional[list] = []
+    recent_activities: Optional[list] = []
 
 # -----------------------------------------------------------------------------
 # Standardized Exception Handlers (ensuring success, message, response format)
@@ -144,12 +170,13 @@ async def health_check():
             "message": "DiaWell Local AI Assistant service is healthy and connected to Ollama.",
             "response": {
                 "status": "healthy",
-                "service": "DiaWell Local Python AI Service with RAG",
+                "service": "DiaWell Local Python AI Service with RAG & Activity Engine",
                 "active_model": health.get("active_model"),
                 "installed_models": health.get("installed_models"),
                 "total_models": health.get("models_count", 0),
                 "ollama_host": health.get("host"),
-                "rag_collections": rag_stats
+                "rag_collections": rag_stats,
+                "compendium_activities_loaded": len(activity_service.dm.df)
             }
         }
     else:
@@ -230,6 +257,30 @@ async def chat_endpoint(payload: ChatRequest):
                 "success": False,
                 "message": f"Failed to generate AI response: {str(e)}",
                 "response": None
+            }
+        )
+
+
+@app.post("/recommend_activities", summary="Personalized Physical Activity Recommendations")
+async def recommend_activities_endpoint(payload: ActivityRecommendationRequest):
+    """
+    Evaluates patient profile, glucose status, fitness level, and medical history
+    against authentic 2024 Adult Compendium activities.
+    Generates personalized starting durations, transparent estimated calorie calculations,
+    and clinical exercise safety screening.
+    """
+    try:
+        data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+        result = activity_service.generate_recommendations(data_dict)
+        return result
+    except Exception as e:
+        logger.error(f"Unexpected error in /recommend_activities: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "success": False,
+                "message": f"Failed to generate activity recommendations: {str(e)}",
+                "data": None
             }
         )
 
