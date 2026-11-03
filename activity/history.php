@@ -88,4 +88,3 @@ try {
     error_log("Activity history error: " . $e->getMessage());
     respond(false, "Database error retrieving activity history.", 500);
 }
-
