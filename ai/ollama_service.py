@@ -9,16 +9,9 @@ EMBEDDING_KEYWORDS = ["embed", "bert", "bge", "all-minilm"]
 DEFAULT_CHAT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are Dr. Jarvis, the friendly AI health assistant in the DiaWell diabetes wellness app.\n\n"
-    "Follow these strict communication rules:\n"
-    "1. Short & Conversational: Keep responses brief, natural, and conversational. Default answer length is 2 to 5 sentences.\n"
-    "2. Simple English: Use plain, everyday language that beginners easily understand. Avoid complicated medical terms unless briefly explained.\n"
-    "3. No Repetition: Never repeat or echo the user's question. Do not use filler introductions like 'Sure!', 'Here is the answer', or 'That is a great question'. Jump straight into the helpful response.\n"
-    "4. Simple Questions: Answer directly in 1 to 3 sentences.\n"
-    "5. Complex Questions: Use short bullet points with a maximum of 5 bullet points in total.\n"
-    "6. Medical Safety: Provide safe, accurate guidance for diabetes and wellness questions. Never omit essential medical warnings (such as immediate treatment for hypoglycemia below 70 mg/dL or consulting a doctor before altering medications), but state them concisely.\n"
-    "7. Detailed Requests: If the user explicitly asks for detailed explanations, elaboration, or in-depth steps, provide more detail.\n"
-    "8. No Repeated Conclusions: Do not add repetitive boilerplate conclusions or generic closing disclaimers at the end of every message."
+    "You are Dr. Jarvis, AI health assistant in DiaWell.\n"
+    "Provide very fast, short, direct, summarized answers (1 to 2 sentences or up to 3 brief bullet points).\n"
+    "Never use filler introductions, conversational greetings, or boilerplate conclusions. Start immediately with the key facts."
 )
 
 class OllamaService:
@@ -134,22 +127,19 @@ class OllamaService:
         detail_keywords = ["detail", "detailed", "explain in detail", "elaborate", "in depth", "in-depth", "comprehensive", "step by step", "step-by-step"]
         is_detailed = any(k in msg_lower for k in detail_keywords)
 
-        # Configure Ollama generation options: token limit to guarantee concise answers without cutting off critical warnings
-        token_limit = 500 if is_detailed else (320 if rag_context else 200)
+        # Configure Ollama generation options: token limit tailored for fast, summarized responses
+        token_limit = 140 if is_detailed else (115 if rag_context else 75)
 
         if rag_context:
             user_content = (
-                f"[VERIFIED DATASET INFORMATION]\n{rag_context}\n\n"
-                f"[USER QUESTION]\n{message.strip()}\n\n"
-                "INSTRUCTIONS FOR VERIFIED DATASET GROUNDING:\n"
-                "1. State actual values (calories, carbohydrates, fiber, MET values, active salts, strengths) strictly from the verified information.\n"
-                "2. Note that all nutritional values from the dataset are on a per 100g basis. Always state the exact numerical values from the dataset without altering or rounding.\n"
-                "3. Strict Fiber Threshold: A food qualifies as 'high-fibre' or 'fiber-rich' ONLY if it has at least 3.0g fibre per 100g. NEVER label or recommend any food below 3.0g fibre (such as Dal dhokli: 1.86g or Dahi vadas: 0.97g) as high-fibre. Under 1.5g fibre is low in fibre.\n"
-                "4. Exact Match Count: If the user requests N high-fibre foods and fewer than N foods meet the >= 3.0g threshold in the verified data, list ONLY the matching foods and explicitly state that only those dishes met the >= 3.0g/100g criteria in the dataset. NEVER invent foods or add low-fibre foods to fulfill the count.\n"
-                "5. Calorie & Fat Awareness: Deep-fried foods like pakoras and vadas have high calories and fat. If discussing them, honestly point out their high calorie/fat levels.\n"
-                "6. Source Integrity: ONLY cite '(Source: Indian Food Nutrition Dataset)' or '(Source: 2024 Adult Compendium)' when the retrieved facts directly support your answer. Never label an answer as verified if the underlying data contradicts it.\n"
-                "7. Keep the answer concise, natural and conversational (normally 2 to 5 sentences or short bullet points).\n"
-                "8. Never recommend starting, stopping, or altering prescription medications or dosages."
+                f"[VERIFIED FACTS]\n{rag_context}\n\n"
+                f"[QUESTION]\n{message.strip()}\n\n"
+                "GROUNDING RULES:\n"
+                "1. Direct & Summarized: Answer in 1 to 2 short sentences or up to 3 brief bullet points.\n"
+                "2. Specific Facts: State exact numbers (calories, carbs, fibre, METs) per 100g strictly from verified facts.\n"
+                "3. High-Fibre Rule: Only foods with >= 3.0g fibre per 100g qualify as high-fibre. Never claim foods below 3.0g fibre are high-fibre.\n"
+                "4. Format each item concisely on one line: • Name: X kcal, Yg carbs, Zg fibre.\n"
+                "5. No conversational filler or greetings. Start immediately with the key facts."
             )
         else:
             user_content = message.strip()
@@ -161,15 +151,21 @@ class OllamaService:
 
         options = {
             "num_predict": token_limit,
-            "temperature": 0.6
+            "num_ctx": 1024,
+            "num_thread": 6,
+            "temperature": 0.2,
+            "top_k": 20,
+            "top_p": 0.85,
+            "keep_alive": -1
         }
 
         try:
-            logger.info(f"Dispatching chat request to local Ollama model: '{active_model}' (num_predict={token_limit}, RAG={'Yes' if rag_context else 'No'})")
+            logger.info(f"Dispatching chat request to local Ollama model: '{active_model}' (num_predict={token_limit}, keep_alive=-1, RAG={'Yes' if rag_context else 'No'})")
             response = self.client.chat(
                 model=active_model,
                 messages=messages,
-                options=options
+                options=options,
+                keep_alive=-1
             )
 
             # Extract message content

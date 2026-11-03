@@ -17,6 +17,7 @@
  */
 
 // Enable CORS and define JSON response type
+set_time_limit(180);
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-User-Id");
@@ -95,8 +96,8 @@ curl_setopt_array($ch, [
         "Content-Length: " . strlen($jsonPayload),
         "Accept: application/json"
     ],
-    CURLOPT_CONNECTTIMEOUT => 5,
-    CURLOPT_TIMEOUT => 60
+    CURLOPT_CONNECTTIMEOUT => 10,
+    CURLOPT_TIMEOUT => 150
 ]);
 
 $responseBody = curl_exec($ch);
