@@ -97,8 +97,14 @@ class RAGService:
             return "clinical"
 
         # 4. Medicine / Drug queries
-
-        # 5. Food / Nutrition queries
+        med_keywords = [
+            "medicine", "medication", "drug", "tablet", "capsule", "syrup", "injection",
+            "insulin", "metformin", "glimepiride", "vildagliptin", "sitagliptin", "dapagliflozin",
+            "empagliflozin", "amaryl", "glycomet", "januvia", "galvus", "forxiga", "jardiance",
+            "dose", "dosage", "salt", "active ingredient", "side effect", "pill"
+        ]
+        if any(k in q for k in med_keywords):
+            return "medicine"
         food_keywords = [
             "food", "eat", "eating", "snack", "breakfast", "lunch", "dinner", "carbs", "carbohydrate",
             "calorie", "calories", "protein", "fiber", "fibre", "diet", "dish",
@@ -164,70 +170,119 @@ class RAGService:
         try:
             # Smart Nutritional Constraint Handling for Food Queries
             q_lower = query.lower()
+            q_norm = q_lower.replace("-", " ")
             where_filter = None
             requested_nutritional_constraint = None
 
             if category == "food":
-                if any(k in q_lower for k in ["high fiber", "high fibre", "rich in fiber", "fiber rich", "more fiber"]):
-                    where_filter = {"fibre_g": {"$gte": 2.5}}
+                high_fiber_keywords = [
+                    "high fiber", "high fibre", "rich in fiber", "rich in fibre",
+                    "fiber rich", "fibre rich", "high in fiber", "high in fibre",
+                    "more fiber", "more fibre", "highest fiber", "highest fibre",
+                    "source of fiber", "source of fibre", "good fiber", "good fibre"
+                ]
+                if any(k in q_norm for k in high_fiber_keywords):
+                    # Strict project rule: at least 3.0g fibre per 100g
+                    where_filter = {"fibre_g": {"$gte": 3.0}}
                     requested_nutritional_constraint = "high_fiber"
-                elif any(k in q_lower for k in ["low carb", "low carbohydrate", "keto"]):
+                elif any(k in q_norm for k in ["low carb", "low carbohydrate", "keto"]):
                     where_filter = {"carbs_g": {"$lte": 15.0}}
                     requested_nutritional_constraint = "low_carb"
-                elif any(k in q_lower for k in ["low calorie", "low cal", "weight loss"]):
+                elif any(k in q_norm for k in ["low calorie", "low cal", "weight loss"]):
                     where_filter = {"calories": {"$lte": 180.0}}
                     requested_nutritional_constraint = "low_calorie"
 
-            # Execute query with or without where filter
+            # Execute query: fetch extra candidates when filtered to allow secondary filtering
             results = None
-            constraint_fallback = False
+            fetch_k = min(count, max(n_results * 4, 15)) if requested_nutritional_constraint else min(n_results, count)
 
             if where_filter:
                 try:
                     results = collection.query(
                         query_texts=[query],
-                        n_results=min(n_results, count),
+                        n_results=fetch_k,
                         where=where_filter
                     )
-                    # If no dishes meet the strict filter, fallback to general search with an explicit audit notice
-                    if not results.get("documents") or not results["documents"][0]:
-                        results = None
-                        constraint_fallback = True
                 except Exception as fe:
-                    logger.warning(f"Filter query error ({where_filter}): {fe}. Falling back to standard query.")
+                    logger.warning(f"Filter query error ({where_filter}): {fe}. Proceeding without unfiltered fallback.")
                     results = None
 
-            if results is None:
+            # Fallback only when NO nutritional constraint was requested
+            if results is None and where_filter is None:
                 results = collection.query(
                     query_texts=[query],
                     n_results=min(n_results, count)
                 )
 
-            docs = results.get("documents", [[]])[0]
-            metadatas = results.get("metadatas", [[]])[0]
-            distances = results.get("distances", [[]])[0] if "distances" in results else []
+            docs = results.get("documents", [[]])[0] if results else []
+            metadatas = results.get("metadatas", [[]])[0] if results else []
+            distances = results.get("distances", [[]])[0] if (results and "distances" in results) else []
 
-            if not docs:
-                logger.info(f"No matching documents returned from collection '{col_name}'.")
-                return {
-                    "category": category,
-                    "collection_name": col_name,
-                    "has_context": False,
-                    "context_text": "",
-                    "sources": []
-                }
-
-            context_items = []
-            sources = []
-
+            # Secondary strict Python-level safety filter
+            valid_candidates = []
             for i, doc in enumerate(docs):
                 meta = metadatas[i] if i < len(metadatas) else {}
                 dist = distances[i] if i < len(distances) else None
 
                 # Discard low-relevance matches if distance is excessively high
-                if dist is not None and dist > 1.3:
+                if dist is not None and dist > 1.4:
                     continue
 
+                # Strict High-Fiber Rule: Fibre must be >= 3.0g per 100g
+                if requested_nutritional_constraint == "high_fiber":
+                    fib_val = float(meta.get("fibre_g", 0.0) or 0.0)
+                    if fib_val < 3.0:
+                        continue
+                    # Exclude non-meal spice powders and ultra-sugary confections when foods are requested
+                    name_lower = meta.get("dish_name", "").lower()
+                    sodium = float(meta.get("sodium_mg", 0.0) or 0.0)
+                    sugar = float(meta.get("free_sugar_g", 0.0) or 0.0)
+                    if any(sp in name_lower for sp in ["spice blend", "masala powder", "panch phoran"]) or sodium > 1500:
+                        continue
+                    if "burfi" in name_lower or "fudge" in name_lower or sugar > 20.0:
+                        continue
+
+                elif requested_nutritional_constraint == "low_carb":
+                    carbs_val = float(meta.get("carbs_g", 999.0) or 999.0)
+                    if carbs_val > 15.0:
+                        continue
+
+                elif requested_nutritional_constraint == "low_calorie":
+                    cal_val = float(meta.get("calories", 999.0) or 999.0)
+                    if cal_val > 180.0:
+                        continue
+
+                valid_candidates.append((doc, meta))
+
+            # Cap to requested count
+            final_candidates = valid_candidates[:n_results]
+
+            if not final_candidates:
+                if requested_nutritional_constraint == "high_fiber":
+                    return {
+                        "category": category,
+                        "collection_name": col_name,
+                        "has_context": True,
+                        "context_text": (
+                            "[STRICT NUTRITIONAL AUDIT: Exactly 0 verified food(s) in the dataset met the high-fiber threshold (>= 3.0g fibre per 100g). "
+                            "You MUST inform the user that no verified dishes in the dataset met the >= 3.0g/100g high-fiber threshold. "
+                            "NEVER recommend or label any food below 3.0g fibre as high-fiber, and NEVER invent unverified foods.]"
+                        ),
+                        "sources": []
+                    }
+                else:
+                    logger.info(f"No matching documents returned from collection '{col_name}'.")
+                    return {
+                        "category": category,
+                        "collection_name": col_name,
+                        "has_context": False,
+                        "context_text": "",
+                        "sources": []
+                    }
+
+            context_items = []
+            sources = []
+            for doc, meta in final_candidates:
                 context_items.append(f"• {doc}")
                 source_name = meta.get("source", col_name)
                 title = meta.get("dish_name") or meta.get("brand_name") or meta.get("description") or "Dataset Record"
@@ -238,24 +293,23 @@ class RAGService:
                     "metadata": meta
                 })
 
-            if not context_items:
-                return {
-                    "category": category,
-                    "collection_name": col_name,
-                    "has_context": False,
-                    "context_text": "",
-                    "sources": []
-                }
-
             context_text = "\n".join(context_items)
 
-            # If user asked for a constraint like high-fiber, but fallback was triggered because no candidates satisfied it:
-            if constraint_fallback and requested_nutritional_constraint == "high_fiber":
-                context_text += (
-                    "\n[NUTRITIONAL FACT-CHECK AUDIT: The user asked for a 'high fiber' option, but NONE of the retrieved dishes meet the high-fiber standard (all have < 2.5g fiber per 100g). "
-                    "For example, Egg pakoras contain only 0.86g fiber per 100g, and are very high in calories (710.5 kcal) and fat (75.9g) from deep frying. "
-                    "You MUST explicitly inform the user that these dishes are NOT high in fiber, and explain that eggs and meats naturally have near-zero fiber.]"
-                )
+            # Audit notice for High-Fiber Constraint
+            if requested_nutritional_constraint == "high_fiber":
+                matched_count = len(final_candidates)
+                if matched_count < n_results:
+                    context_text += (
+                        f"\n\n[STRICT NUTRITIONAL AUDIT: The user requested {n_results} high-fibre foods, but exactly {matched_count} verified food(s) in the dataset met the strict threshold (>= 3.0g fibre per 100g). "
+                        f"You MUST recommend ONLY these {matched_count} matching food(s) and explicitly explain to the user that only {matched_count} verified dish(es) met the >= 3.0g/100g threshold. "
+                        "Do NOT invent or suggest ANY extra foods with < 3.0g fibre to fill the requested count.]"
+                    )
+                else:
+                    context_text += (
+                        "\n\n[STRICT NUTRITIONAL AUDIT: All recommended dishes above have AT LEAST 3.0g fibre per 100g edible portion strictly verified from the dataset. "
+                        "State their exact nutritional values per 100g from the verified information. "
+                        "NEVER recommend or label any food with less than 3.0g fibre (such as Dal dhokli: 1.86g or Dahi vadas: 0.97g) as high-fibre.]"
+                    )
 
             # Append safety reminder for medicine
             if category == "medicine":

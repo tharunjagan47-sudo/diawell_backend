@@ -6,6 +6,7 @@ import ollama
 logger = logging.getLogger("DiaWell.OllamaService")
 
 EMBEDDING_KEYWORDS = ["embed", "bert", "bge", "all-minilm"]
+DEFAULT_CHAT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are Dr. Jarvis, the friendly AI health assistant in the DiaWell diabetes wellness app.\n\n"
@@ -60,7 +61,8 @@ class OllamaService:
         Read the actual installed Ollama model name instead of assuming a model name.
         1. If a specific model is requested and installed, use it.
         2. If OLLAMA_MODEL environment variable matches an installed model, use it.
-        3. Dynamically filter out embedding-only models and pick the installed chat model.
+        3. Dynamically filter out embedding-only models and pick the installed chat model,
+           prioritizing 'qwen2.5:3b' as the default chat model.
         4. If no models installed, raise a descriptive RuntimeError.
         """
         installed = self.get_installed_models()
@@ -68,7 +70,7 @@ class OllamaService:
         if not installed:
             raise RuntimeError(
                 f"No models found in local Ollama at {self.host}. "
-                "Please install a model first by running: 'ollama pull qwen2.5:3b' or 'ollama pull llama3.1:8b'."
+                f"Please install a model first by running: 'ollama pull {DEFAULT_CHAT_MODEL}'."
             )
 
         # 1. Check if user requested a specific model that is installed
@@ -96,7 +98,11 @@ class OllamaService:
         ]
 
         if chat_models:
-            # Use the first available chat model installed locally
+            # Prioritize DEFAULT_CHAT_MODEL (qwen2.5:3b)
+            for cm in chat_models:
+                if DEFAULT_CHAT_MODEL.lower() in cm.lower() or "qwen" in cm.lower():
+                    self._cached_model = cm
+                    return cm
             self._cached_model = chat_models[0]
             return chat_models[0]
 
@@ -128,8 +134,8 @@ class OllamaService:
         detail_keywords = ["detail", "detailed", "explain in detail", "elaborate", "in depth", "in-depth", "comprehensive", "step by step", "step-by-step"]
         is_detailed = any(k in msg_lower for k in detail_keywords)
 
-        # Configure Ollama generation options: ~200-250 token limit to guarantee concise answers without cutting off critical warnings
-        token_limit = 500 if is_detailed else (260 if rag_context else 200)
+        # Configure Ollama generation options: token limit to guarantee concise answers without cutting off critical warnings
+        token_limit = 500 if is_detailed else (320 if rag_context else 200)
 
         if rag_context:
             user_content = (
@@ -137,12 +143,13 @@ class OllamaService:
                 f"[USER QUESTION]\n{message.strip()}\n\n"
                 "INSTRUCTIONS FOR VERIFIED DATASET GROUNDING:\n"
                 "1. State actual values (calories, carbohydrates, fiber, MET values, active salts, strengths) strictly from the verified information.\n"
-                "2. Note that all nutritional values from the dataset are on a per 100g basis.\n"
-                "3. Fiber Truthfulness: Never claim or recommend a food as 'high fiber' unless its fiber is at least 3.0g per 100g. Foods with under 1.5g fiber (such as Egg pakoras with only 0.86g/0.9g fiber) are LOW in fiber. Eggs and meats naturally contain virtually zero fiber.\n"
-                "4. Calorie & Fat Awareness: Deep-fried foods like pakoras have very high calories (~710 kcal/100g) and very high fat (~76g/100g). If asked about deep-fried foods, point out their high calorie/fat content honestly.\n"
-                "5. Source Integrity: ONLY cite '(Source: Indian Food Nutrition Dataset)' or '(Source: 2024 Adult Compendium)' when the retrieved facts directly support your answer. Never label an answer as verified if the underlying data contradicts it.\n"
-                "6. Keep the answer concise, natural and conversational (normally 2 to 5 sentences).\n"
-                "7. Never recommend starting, stopping, or altering prescription medications or dosages."
+                "2. Note that all nutritional values from the dataset are on a per 100g basis. Always state the exact numerical values from the dataset without altering or rounding.\n"
+                "3. Strict Fiber Threshold: A food qualifies as 'high-fibre' or 'fiber-rich' ONLY if it has at least 3.0g fibre per 100g. NEVER label or recommend any food below 3.0g fibre (such as Dal dhokli: 1.86g or Dahi vadas: 0.97g) as high-fibre. Under 1.5g fibre is low in fibre.\n"
+                "4. Exact Match Count: If the user requests N high-fibre foods and fewer than N foods meet the >= 3.0g threshold in the verified data, list ONLY the matching foods and explicitly state that only those dishes met the >= 3.0g/100g criteria in the dataset. NEVER invent foods or add low-fibre foods to fulfill the count.\n"
+                "5. Calorie & Fat Awareness: Deep-fried foods like pakoras and vadas have high calories and fat. If discussing them, honestly point out their high calorie/fat levels.\n"
+                "6. Source Integrity: ONLY cite '(Source: Indian Food Nutrition Dataset)' or '(Source: 2024 Adult Compendium)' when the retrieved facts directly support your answer. Never label an answer as verified if the underlying data contradicts it.\n"
+                "7. Keep the answer concise, natural and conversational (normally 2 to 5 sentences or short bullet points).\n"
+                "8. Never recommend starting, stopping, or altering prescription medications or dosages."
             )
         else:
             user_content = message.strip()
@@ -205,4 +212,3 @@ class OllamaService:
                 "installed_models": [],
                 "error": str(e)
             }
-

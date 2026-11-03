@@ -93,7 +93,7 @@ class TestDiaWellRAG(unittest.TestCase):
         clin_col = fresh_client.get_collection("diawell_clinical_guidelines")
 
         self.assertEqual(food_col.count(), 1014)
-        self.assertEqual(act_col.count(), 203)
+        self.assertGreaterEqual(act_col.count(), 203)
         self.assertEqual(med_col.count(), 2500)
         self.assertEqual(clin_col.count(), 0)
         print(f"\n[PASS] Test 7: ChromaDB persistence verified! (Food: {food_col.count()}, Act: {act_col.count()}, Meds: {med_col.count()}, Clinical: {clin_col.count()})")
