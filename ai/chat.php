@@ -54,11 +54,11 @@ if (!empty($userMessage)) {
     if ($response !== false && $httpCode >= 200 && $httpCode < 300) {
         $decoded = json_decode($response, true);
         echo json_encode([
-            "deprecated" => true,
-            "migration_notice" => "Please update client URL to http://localhost:8000/api/v1/chat or http://localhost:8000/api/v1/chat/stream",
             "success" => true,
-            "message" => "AI response generated via Python FastAPI Gateway.",
-            "response" => $decoded["response"] ?? $decoded
+            "response" => $decoded["response"] ?? "",
+            "model" => $decoded["model"] ?? "qwen2.5:3b",
+            "created_at" => $decoded["created_at"] ?? date("c"),
+            "duration_ms" => $decoded["duration_ms"] ?? null
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         exit;
     }
