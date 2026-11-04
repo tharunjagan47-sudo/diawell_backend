@@ -4,4 +4,4 @@ ollama>=0.3.0
 pydantic>=2.6.0
 pandas>=2.2.0
 python-multipart>=0.0.9
-sse-starlette>=2.0.0
+

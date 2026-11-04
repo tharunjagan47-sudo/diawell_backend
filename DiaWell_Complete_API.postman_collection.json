@@ -14,6 +14,11 @@
       "key": "user_id",
       "value": "8",
       "type": "string"
+    },
+    {
+      "key": "fastapi_base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
     }
   ],
   "item": [
@@ -24,7 +29,12 @@
           "name": "1.1 Sign Up",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"full_name\": \"Mary Jane\",\n  \"email\": \"mary.jane@example.com\",\n  \"password\": \"Password123@\",\n  \"confirm_password\": \"Password123@\"\n}"
@@ -36,7 +46,12 @@
           "name": "1.2 Login",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"mary.jane@example.com\",\n  \"password\": \"Password123@\"\n}"
@@ -48,7 +63,12 @@
           "name": "1.3 Forgot / Reset Password",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"mary.jane@example.com\",\n  \"new_password\": \"NewPassword123@\",\n  \"confirm_new_password\": \"NewPassword123@\"\n}"
@@ -65,7 +85,12 @@
           "name": "2.1 Save Patient Details (Step 1)",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"diabetes_type\": \"Type 2\",\n  \"age\": 30,\n  \"height_cm\": 165,\n  \"weight_kg\": 68,\n  \"current_glucose_mg_dl\": 128,\n  \"target_glucose_mg_dl\": 120\n}"
@@ -84,7 +109,12 @@
           "name": "2.3 Save Health Preferences (Step 2)",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"health_focus\": \"Glucose Control\",\n  \"dietary_preferences\": [\"Non-Vegetarian\", \"Low-Carb / Keto\"],\n  \"allergies\": [\"Nuts\"],\n  \"activity_level\": \"Moderate (3-5 days/week)\"\n}"
@@ -103,7 +133,12 @@
           "name": "2.5 Save Food Preferences Settings",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"preferred_diet\": \"Non-Vegetarian\",\n  \"allergies\": [\"Nuts\", \"Milk\"],\n  \"preferred_styles\": [\"Whole grains\", \"Vegetables\", \"Fish\", \"Poultry\"],\n  \"foods_to_avoid\": \"Excess sugary sodas\"\n}"
@@ -122,7 +157,12 @@
           "name": "2.7 Edit Personal Profile",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"full_name\": \"Mary Jane Watson\",\n  \"email\": \"mary.jane@example.com\",\n  \"diabetes_type\": \"Type 2\",\n  \"age\": 30,\n  \"height_cm\": 165,\n  \"weight_kg\": 68\n}"
@@ -137,8 +177,15 @@
             "body": {
               "mode": "formdata",
               "formdata": [
-                {"key": "user_id", "value": "{{user_id}}", "type": "text"},
-                {"key": "profile_photo", "type": "file"}
+                {
+                  "key": "user_id",
+                  "value": "{{user_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "profile_photo",
+                  "type": "file"
+                }
               ]
             },
             "url": "{{base_url}}/auth/uploadprofile.php"
@@ -160,7 +207,12 @@
           "name": "3.1 Log Glucose Reading",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"reading_value\": 128,\n  \"reading_type\": \"Fasting\",\n  \"reading_date\": \"2026-10-15\",\n  \"reading_time\": \"07:30:00\",\n  \"notes\": \"Before breakfast, after overnight fast.\"\n}"
@@ -198,7 +250,12 @@
           "name": "4.1 Log Meal",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"meal_category\": \"BREAKFAST\",\n  \"food_name\": \"Berry & almond oats\",\n  \"portion\": \"1 bowl • 290 g\",\n  \"calories\": 320,\n  \"carbs_g\": 42.0,\n  \"protein_g\": 12.0,\n  \"fat_g\": 9.0,\n  \"log_date\": \"2026-10-15\",\n  \"log_time\": \"08:30:00\",\n  \"icon\": \"🥣\"\n}"
@@ -257,7 +314,12 @@
           "name": "5.2 Add Medication Reminder",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"name\": \"Metformin\",\n  \"dose\": \"500 mg • 1 Tablet\",\n  \"reminder_time\": \"20:00:00\",\n  \"reminder_date\": \"2026-10-15\",\n  \"timing\": \"After Meal\",\n  \"frequency\": \"Daily\",\n  \"notes\": \"Take with a glass of water after dinner.\"\n}"
@@ -269,7 +331,12 @@
           "name": "5.3 Update Medication Status (Taken/Missed)",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"medication_id\": 1,\n  \"status\": \"Taken\"\n}"
@@ -288,7 +355,12 @@
           "name": "5.5 Delete Medication",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"medication_id\": 1\n}"
@@ -305,7 +377,12 @@
           "name": "6.1 Log Workout Activity",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"activity_type\": \"Walking\",\n  \"duration_mins\": 33,\n  \"distance_km\": 2.8,\n  \"calories_kcal\": 185,\n  \"glucose_before\": 128,\n  \"glucose_after\": 106,\n  \"activity_date\": \"2026-10-15\",\n  \"activity_time\": \"07:45:00\",\n  \"notes\": \"Morning brisk walk.\"\n}"
@@ -367,7 +444,12 @@
           "name": "9.2 Mark Notification as Read",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"notification_id\": 1\n}"
@@ -379,7 +461,12 @@
           "name": "9.3 Clear All Notifications",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}}\n}"
@@ -393,29 +480,115 @@
       "name": "10. JARVIS AI Chatbot",
       "item": [
         {
-          "name": "10.1 Send Message to AI",
-          "request": {
-            "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"user_id\": {{user_id}},\n  \"message\": \"What can I eat for breakfast?\"\n}"
-            },
-            "url": "{{base_url}}/ai/chat.php"
-          }
-        },
-        {
-          "name": "10.2 Get Chat History",
+          "name": "10.1 FastAPI Health Check",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/ai/chat.php?user_id={{user_id}}"
+            "header": [],
+            "url": "{{fastapi_base_url}}/health",
+            "description": "Direct FastAPI microservice health check verifying Ollama (qwen2.5:3b) and Indian Food Dataset status."
           }
         },
         {
-          "name": "10.3 Clear Chat History",
+          "name": "10.2 Send Message to AI (JSON)",
           "request": {
-            "method": "DELETE",
-            "url": "{{base_url}}/ai/chat.php?user_id={{user_id}}"
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"What are 2 good breakfast options for Type 2 diabetes?\",\n  \"model\": \"qwen2.5:3b\",\n  \"temperature\": 0.7,\n  \"user_id\": \"{{user_id}}\"\n}"
+            },
+            "url": "{{fastapi_base_url}}/api/v1/chat",
+            "description": "Synchronous JSON response endpoint directly querying local Ollama qwen2.5:3b with the clinical DiaWell system persona."
+          }
+        },
+        {
+          "name": "10.3 Send Message to AI (SSE Stream)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Suggest 2 high-fibre fruits for diabetes. Keep it very short.\",\n  \"model\": \"qwen2.5:3b\",\n  \"temperature\": 0.7,\n  \"user_id\": \"{{user_id}}\"\n}"
+            },
+            "url": "{{fastapi_base_url}}/api/v1/chat/stream",
+            "description": "Server-Sent Events (SSE) streaming endpoint returning word-by-word token generation directly from Ollama."
+          }
+        },
+        {
+          "name": "10.4 Personalized Food Recommendations",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"diabetes_type\": \"Type 2\",\n  \"current_glucose_mg_dl\": 140,\n  \"target_glucose_mg_dl\": 120,\n  \"dietary_preferences\": \"Vegetarian\",\n  \"health_focus\": \"Glucose Control\",\n  \"limit\": 5\n}"
+            },
+            "url": "{{fastapi_base_url}}/recommend",
+            "description": "Direct clinical dataset recommendation engine evaluating blood glucose against 1,014 verified Indian food records."
+          }
+        },
+        {
+          "name": "10.5 Personalized Activity Recommendations",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"age\": 45,\n  \"height_cm\": 175,\n  \"weight_kg\": 75,\n  \"current_glucose_mg_dl\": 130,\n  \"target_glucose_mg_dl\": 120,\n  \"fitness_level\": \"Moderate\",\n  \"preferred_activity\": \"All\",\n  \"available_time_mins\": 30\n}"
+            },
+            "url": "{{fastapi_base_url}}/recommend_activities",
+            "description": "Direct activity recommendation engine evaluating glucose and fitness level against 2024 Compendium benchmarks with MET values."
+          }
+        },
+        {
+          "name": "10.6 Food Explorer & Nutrition Search",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fastapi_base_url}}/search?query=dal&max_carbs=30",
+            "description": "Direct dataset search filtering 1,014 Indian dishes by macronutrients and keywords."
+          }
+        },
+        {
+          "name": "10.7 Legacy PHP AI Middleware (Deprecated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"message\": \"What can I eat for breakfast?\"\n}"
+            },
+            "url": "{{base_url}}/ai/chat.php",
+            "description": "Deprecated PHP forwarder. Returns migration guide directing clients to connect directly to FastAPI on Port 8000."
           }
         }
       ]
@@ -427,7 +600,12 @@
           "name": "11.1 Change Password",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"current_password\": \"Password123@\",\n  \"new_password\": \"NewPassword123@\",\n  \"confirm_password\": \"NewPassword123@\"\n}"
@@ -446,7 +624,12 @@
           "name": "11.3 Update Notification Preferences",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"medication_reminders\": true,\n  \"meal_logging_reminders\": true,\n  \"glucose_checkins\": true,\n  \"weekly_report_alerts\": true\n}"
@@ -465,7 +648,12 @@
           "name": "11.5 Delete Account",
           "request": {
             "method": "POST",
-            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"user_id\": {{user_id}},\n  \"password\": \"NewPassword123@\"\n}"
@@ -477,4 +665,3 @@
     }
   ]
 }
-
