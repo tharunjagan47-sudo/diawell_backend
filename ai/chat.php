@@ -33,6 +33,46 @@ if (empty($userMessage)) {
     exit;
 }
 
+function outputResponse(string $reply): void {
+    http_response_code(200);
+    echo json_encode([
+        "success" => true,
+        "status" => "success",
+        "response" => $reply,
+        "reply" => $reply,
+        "message" => $reply,
+        "answer" => $reply,
+        "data" => [
+            "response" => $reply,
+            "reply" => $reply,
+            "message" => $reply
+        ]
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
+// 1. Natural handling for Greetings, Thankings, and Goodbyes
+$lowerMsg = strtolower($userMessage);
+$cleanAlpha = preg_replace('/[^a-z\s]/', '', $lowerMsg);
+$cleanAlpha = trim(preg_replace('/\s+/', ' ', $cleanAlpha));
+
+// Greeting check
+if (preg_match('/^(hi|hello|hey|hai|vanakkam|good\s*(morning|afternoon|evening)|halo|dr\s*jarvis|jarvis)($|\s)/i', $cleanAlpha) && strlen($cleanAlpha) < 25) {
+    outputResponse("Hello! I am Dr. Jarvis, your DiaWell diabetes wellness companion. How can I assist you with your diet, blood sugar, or exercise routine today?");
+    exit;
+}
+
+// Thanking check
+if (preg_match('/^(thank\s*you|thanks|thanku|thx|nandri|romba\s*nandri|thank\s*you\s*so\s*much|thanks\s*a\s*lot)($|\s)/i', $cleanAlpha) && strlen($cleanAlpha) < 30) {
+    outputResponse("You're very welcome! Stay healthy, monitor your glucose levels regularly, and feel free to ask whenever you need lifestyle or diet tips. Take care!");
+    exit;
+}
+
+// Goodbye check
+if (preg_match('/^(bye|goodbye|see\s*you|tata|good\s*night)($|\s)/i', $cleanAlpha) && strlen($cleanAlpha) < 20) {
+    outputResponse("Goodbye! Take great care of your health and reach out anytime you need support.");
+    exit;
+}
+
 /**
  * Instant Zero-Token Tanglish-to-English Normalization:
  * Direct word-boundary mapping in PHP before sending to Ollama.
@@ -40,38 +80,39 @@ if (empty($userMessage)) {
  */
 function normalizeTanglish(string $text): string {
     $replacements = [
-        '/\b(thalai\s*suthal|mayakkam)\b/i' => 'dizziness (low sugar check)',
-        '/\b(kammi\s*panna|kuraika|kuraiya)\b/i' => 'to lower',
-        '/\b(kalaila|kaalaila)\b/i' => 'morning breakfast',
-        '/\b(madhiyam)\b/i' => 'afternoon lunch',
-        '/\b(rathiri|naight)\b/i' => 'night dinner',
-        '/\b(sapadu|saapadu|sapdalam|saapidalam|sapda)\b/i' => 'food to eat',
-        '/\b(sarkarai)\b/i' => 'blood sugar',
-        '/\b(athigam|jasthi)\b/i' => 'high',
-        '/\b(nadai)\b/i' => 'walking',
-        '/\b(pasikudhu|pasi)\b/i' => 'feeling hungry',
-        '/\b(epdi|eppadi)\b/i' => 'how',
-        '/\b(enna)\b/i' => 'what'
+        '/(thalai\s*suthal|mayakkam)/i' => 'dizziness (low sugar check)',
+        '/(kammi\s*panna|kuraika|kuraiya|koraika)/i' => 'to lower',
+        '/(kalaila|kaalaila|kaalai)/i' => 'morning breakfast',
+        '/(madhiyam|madyam|mathiyam)/i' => 'afternoon lunch',
+        '/(rathiri|naight|iravu)/i' => 'night dinner',
+        '/(sapadu|saapadu|sapdalam|saapidalam|sapda|thinnuvathu)/i' => 'food to eat',
+        '/(sarkarai|sarkkarai)/i' => 'blood sugar',
+        '/(athigam|jasthi|adhigam)/i' => 'high',
+        '/(nadai|nadakkalam)/i' => 'walking',
+        '/(pasikudhu|pasi)/i' => 'feeling hungry',
+        '/(epdi|eppadi|yeppadi)/i' => 'how',
+        '/(enna|yenna)/i' => 'what'
     ];
 
-    return preg_replace(array_keys($replacements), array_values($replacements), $text);
+    foreach ($replacements as $pat => $rep) {
+        $text = preg_replace($pat, $rep, $text);
+    }
+    return $text;
 }
 
 $normalizedPrompt = normalizeTanglish($userMessage);
 
-// Ultra-Compact System Prompt (<50 tokens for instant CPU TTFT & strict no-report rule)
-$systemPrompt = "You are Dr. Jarvis, DiaWell's rapid AI Diabetes Specialist. Understand English and Tanglish. Reply in exactly 2-3 short, practical bullet points with Indian low-GI diet or exercise advice. Do NOT generate reports, summaries, or consultation notes at the end.";
+// Ultra-Compact System Prompt (<40 tokens)
+$systemPrompt = "You are Dr. Jarvis, DiaWell's rapid AI Diabetes Specialist. Understand English and Tanglish. Reply in 2-3 short, practical bullet points with Indian low-GI diet or exercise advice. Never generate reports, weekly summaries, or consultation notes.";
 
 $ollamaUrl = "http://127.0.0.1:11434/api/chat";
-$primaryModel = "qwen2.5:1.5b";
-$fallbackModel = "qwen2.5:0.5b";
+$model = "qwen2.5:0.5b";
 
 $options = [
-    "num_gpu" => 0,          // Keep CPU lock (prevents CUDA crash)
-    "num_ctx" => 512,        // Halves CPU memory scan time
-    "num_predict" => 140,    // Sweet spot: complete 2-3 bullet answer in ~1.5 - 2.5 seconds
-    "num_thread" => 8,       // Max CPU threads
-    "temperature" => 0.3
+    "num_gpu" => 0,
+    "num_ctx" => 512,
+    "num_predict" => 120,
+    "temperature" => 0.5
 ];
 
 /**
@@ -85,7 +126,7 @@ function queryOllama(string $url, string $model, string $systemPrompt, string $u
             ["role" => "user", "content" => $userPrompt]
         ],
         "stream" => false,
-        "keep_alive" => "60m",
+        "keep_alive" => "24h",
         "options" => $options
     ]);
 
@@ -95,7 +136,7 @@ function queryOllama(string $url, string $model, string $systemPrompt, string $u
         CURLOPT_POSTFIELDS => $payload,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
-        CURLOPT_TIMEOUT => 25,
+        CURLOPT_TIMEOUT => 20,
         CURLOPT_CONNECTTIMEOUT => 2
     ]);
 
@@ -113,30 +154,10 @@ function queryOllama(string $url, string $model, string $systemPrompt, string $u
     return null;
 }
 
-// 1. Try Primary Model: qwen2.5:1.5b
-$aiReply = queryOllama($ollamaUrl, $primaryModel, $systemPrompt, $normalizedPrompt, $options);
+$aiReply = queryOllama($ollamaUrl, $model, $systemPrompt, $normalizedPrompt, $options);
 
-// 2. Automatic Fallback to qwen2.5:0.5b if 1.5b is unavailable or slow
-if (empty($aiReply)) {
-    $aiReply = queryOllama($ollamaUrl, $fallbackModel, $systemPrompt, $normalizedPrompt, $options);
-}
-
-// 3. Graceful default
 if (empty($aiReply)) {
     $aiReply = "I am currently reviewing your diabetes wellness query. Please verify local Ollama is active and try again shortly.";
 }
 
-http_response_code(200);
-echo json_encode([
-    "success" => true,
-    "status" => "success",
-    "response" => $aiReply,
-    "reply" => $aiReply,
-    "message" => $aiReply,
-    "answer" => $aiReply,
-    "data" => [
-        "response" => $aiReply,
-        "reply" => $aiReply,
-        "message" => $aiReply
-    ]
-], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+outputResponse($aiReply);
