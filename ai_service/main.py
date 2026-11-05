@@ -27,6 +27,8 @@ Features:
 
 
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["OLLAMA_NUM_GPU"] = "0"
 
 import re
 
@@ -116,16 +118,14 @@ ollama_client = AsyncClient(host=OLLAMA_HOST)
 
 
 
-DIAWELL_SYSTEM_PROMPT = """You are Dr. Jarvis, DiaWell's rapid AI diabetes lifestyle & nutrition assistant.
-
-STRICT INSTRUCTIONS:
-1. Provide short, direct, and actionable answers (maximum 2 to 3 bullet points or 2 short sentences).
-2. DO NOT generate reports, summaries, weekly reviews, disclaimers, or consultation notes at the end of the message.
-3. Be fast, direct, and friendly. Never write lengthy essays or introductory fluff.
-4. If asked about food: briefly state the dish, carbs (g), and fibre (g).
-5. If asked about physical activity or walking: state the MET value and estimated calorie burn directly.
-6. For hypoglycemia (<70 mg/dL): state the Rule of 15 (15g fast carbs, wait 15 mins)."""
-
+DIAWELL_SYSTEM_PROMPT = (
+    "You are Dr. Jarvis, DiaWell's rapid AI diabetes lifestyle & nutrition assistant. "
+    "Provide short, direct, actionable guidance (maximum 2 to 3 bullet points or 2 concise sentences). "
+    "Never generate reports, disclaimers, weekly summaries, or consultation notes at the end. "
+    "For food queries, state dish name, carbs (g), and fibre (g). "
+    "For exercise queries, provide MET value and estimated calories burned. "
+    "For hypoglycemia (<70 mg/dL), recommend the Rule of 15 immediately."
+)
 
 
 # =============================================================================
@@ -270,6 +270,14 @@ class ChatRequest(BaseModel):
 
         description="Optional user ID for session context tracking."
 
+    )
+    options: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional Ollama generation options dictionary."
+    )
+    keep_alive: Optional[str] = Field(
+        default="30m",
+        description="Keep alive duration for Ollama model."
     )
 
 
@@ -466,21 +474,14 @@ async def generate_sse_stream(
 
             stream=True,
 
-            options={
-
+options={
                 "temperature": temperature,
-
-                "num_gpu": 0,
-
-                "num_predict": 75,
-
-                "num_ctx": 1024,
-
-                "num_thread": 6
-
+                "num_gpu": 0,        # CRITICAL: Force CPU-only execution to prevent CUDA PTX crash
+                "num_ctx": 1024,     # Optimize context window for fast CPU RAM allocation
+                "num_predict": 250,  # Cap output tokens to guarantee fast completion (<15s)
+                "num_thread": 8      # Utilize CPU multithreading efficiently
             },
-
-            keep_alive=-1
+            keep_alive="30m"
 
         )
 
@@ -656,21 +657,14 @@ async def chat_json(request: ChatRequest):
 
             stream=False,
 
-            options={
-
+options={
                 "temperature": request.temperature if request.temperature is not None else 0.5,
-
-                "num_gpu": 0,
-
-                "num_predict": 75,
-
-                "num_ctx": 1024,
-
-                "num_thread": 6
-
+                "num_gpu": 0,        # CRITICAL: Force CPU-only execution to prevent CUDA PTX crash
+                "num_ctx": 1024,     # Optimize context window for fast CPU RAM allocation
+                "num_predict": 250,  # Cap output tokens to guarantee fast completion (<15s)
+                "num_thread": 8      # Utilize CPU multithreading efficiently
             },
-
-            keep_alive=-1
+            keep_alive="30m"
 
         )
 

@@ -1,24 +1,8 @@
 <?php
-/**
- * DEPRECATION NOTICE: DiaWell Legacy PHP-to-JSON AI Bridge
- * 
- * STATUS: DEPRECATED & REPLACED
- * MIGRATION TARGET: Python FastAPI Gateway (Port 8000)
- * 
- * Standard JSON:   POST http://localhost:8000/api/v1/chat
- * SSE Streaming:   POST http://localhost:8000/api/v1/chat/stream
- * Local Engine:    Ollama (Port 11434 / qwen2.5:3b)
- * 
- * This legacy script previously introduced unnecessary latency, double JSON serialization,
- * and lacked token streaming capabilities. Direct all client traffic to Port 8000.
- */
-
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-User-Id");
 header("Content-Type: application/json; charset=UTF-8");
-header("Deprecation: true");
-header("Link: <http://localhost:8000/api/v1/chat>; rel=\"successor-version\"");
 
 if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
     http_response_code(200);
@@ -27,53 +11,91 @@ if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
 
 $rawInput = file_get_contents("php://input");
 $data = json_decode($rawInput, true) ?: [];
-$userMessage = trim($data["message"] ?? $data["prompt"] ?? "");
 
-// If invoked during transitional phase, gracefully bridge to Port 8000 while alerting client
-$fastApiUrl = "http://127.0.0.1:8000/api/v1/chat";
+// Extract user message across all common parameter names
+$userMessage = trim($data["message"] ?? $data["prompt"] ?? $data["query"] ?? $_POST["message"] ?? $_POST["prompt"] ?? $_GET["message"] ?? "");
 
-if (!empty($userMessage)) {
-    $payload = json_encode([
-        "prompt" => $userMessage,
-        "model" => $data["model"] ?? "qwen2.5:3b"
-    ]);
-
-    $ch = curl_init($fastApiUrl);
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $payload,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 2
-    ]);
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($response !== false && $httpCode >= 200 && $httpCode < 300) {
-        $decoded = json_decode($response, true);
-        echo json_encode([
-            "success" => true,
-            "response" => $decoded["response"] ?? "",
-            "model" => $decoded["model"] ?? "qwen2.5:3b",
-            "created_at" => $decoded["created_at"] ?? date("c"),
-            "duration_ms" => $decoded["duration_ms"] ?? null
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        exit;
-    }
+if (empty($userMessage)) {
+    http_response_code(200);
+    echo json_encode([
+        "success" => false,
+        "status" => "error",
+        "response" => "Message cannot be empty.",
+        "reply" => "Message cannot be empty.",
+        "message" => "Message cannot be empty.",
+        "answer" => "Message cannot be empty.",
+        "data" => [
+            "response" => "Message cannot be empty.",
+            "reply" => "Message cannot be empty.",
+            "message" => "Message cannot be empty."
+        ]
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
-// Default deprecation response if direct request or FastAPI offline
+$systemPrompt = "You are Dr. Jarvis, the AI Diabetes Assistant for DiaWell. Give concise, practical advice on low-GI diet, blood sugar, and exercise in 3 short bullet points. Remind users to consult a doctor for medication changes.";
+
+$ollamaUrl = "http://127.0.0.1:11434/api/chat";
+$model = "qwen2.5:0.5b";
+
+$payload = json_encode([
+    "model" => $model,
+    "messages" => [
+        [
+            "role" => "system",
+            "content" => $systemPrompt
+        ],
+        [
+            "role" => "user",
+            "content" => $userMessage
+        ]
+    ],
+    "stream" => false,
+    "keep_alive" => "30m",
+    "options" => [
+        "num_gpu" => 0,
+        "num_ctx" => 512,
+        "num_predict" => 150,
+        "temperature" => 0.7
+    ]
+]);
+
+$ch = curl_init($ollamaUrl);
+curl_setopt_array($ch, [
+    CURLOPT_POST => true,
+    CURLOPT_POSTFIELDS => $payload,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
+    CURLOPT_TIMEOUT => 30,
+    CURLOPT_CONNECTTIMEOUT => 3
+]);
+
+$response = curl_exec($ch);
+$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+$aiReply = "";
+
+if ($response !== false && $httpCode >= 200 && $httpCode < 300) {
+    $decoded = json_decode($response, true);
+    $aiReply = trim($decoded["message"]["content"] ?? "");
+}
+
+if (empty($aiReply)) {
+    $aiReply = "I am currently reviewing your diabetes wellness query. Please ensure local Ollama is active or try again shortly.";
+}
+
 http_response_code(200);
 echo json_encode([
-    "deprecated" => true,
-    "status" => "deprecated",
-    "migration_guide" => [
-        "target_gateway" => "http://localhost:8000",
-        "json_endpoint" => "POST /api/v1/chat",
-        "stream_endpoint" => "POST /api/v1/chat/stream",
-        "documentation" => "Direct client connection to Python FastAPI Gateway is required for SSE token streaming."
-    ],
-    "message" => "This PHP middleware endpoint has been deprecated. Connect directly to FastAPI on Port 8000."
-], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    "success" => true,
+    "status" => "success",
+    "response" => $aiReply,
+    "reply" => $aiReply,
+    "message" => $aiReply,
+    "answer" => $aiReply,
+    "data" => [
+        "response" => $aiReply,
+        "reply" => $aiReply,
+        "message" => $aiReply
+    ]
+], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

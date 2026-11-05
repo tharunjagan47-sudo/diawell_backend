@@ -1,4 +1,6 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["OLLAMA_NUM_GPU"] = "0"
 import logging
 from typing import List, Optional, Dict, Any
 import ollama
@@ -156,16 +158,18 @@ class OllamaService:
             "temperature": 0.2,
             "top_k": 20,
             "top_p": 0.85,
-            "keep_alive": -1
+            "keep_alive": "30m",
+            "num_gpu": 0,
+            "num_thread": 8
         }
 
         try:
-            logger.info(f"Dispatching chat request to local Ollama model: '{active_model}' (num_predict={token_limit}, keep_alive=-1, RAG={'Yes' if rag_context else 'No'})")
+            logger.info(f"Dispatching chat request to local Ollama model: '{active_model}' (num_predict={token_limit}, keep_alive="30m", RAG={'Yes' if rag_context else 'No'})")
             response = self.client.chat(
                 model=active_model,
                 messages=messages,
                 options=options,
-                keep_alive=-1
+                keep_alive="30m"
             )
 
             # Extract message content
