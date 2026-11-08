@@ -1,6 +1,6 @@
 <?php
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS, DELETE");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-User-Id");
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -24,6 +24,7 @@ if (empty($userMessage)) {
         "reply" => "Message cannot be empty.",
         "message" => "Message cannot be empty.",
         "answer" => "Message cannot be empty.",
+        "model" => "qwen2.5:0.5b",
         "data" => [
             "response" => "Message cannot be empty.",
             "reply" => "Message cannot be empty.",
@@ -38,10 +39,12 @@ function outputResponse(string $reply): void {
     echo json_encode([
         "success" => true,
         "status" => "success",
+        "model" => "qwen2.5:0.5b",
         "response" => $reply,
         "reply" => $reply,
         "message" => $reply,
         "answer" => $reply,
+        "created_at" => date('Y-m-d H:i:s'),
         "data" => [
             "response" => $reply,
             "reply" => $reply,
@@ -116,7 +119,7 @@ $options = [
 ];
 
 /**
- * Execute Ollama chat request via cURL
+ * Execute Ollama chat request via native HTTP Stream (robust, zero extension dependency) with cURL fallback
  */
 function queryOllama(string $url, string $model, string $systemPrompt, string $userPrompt, array $options): ?string {
     $payload = json_encode([
@@ -128,29 +131,53 @@ function queryOllama(string $url, string $model, string $systemPrompt, string $u
         "stream" => false,
         "keep_alive" => "24h",
         "options" => $options
-    ]);
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $payload,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
-        CURLOPT_TIMEOUT => 20,
-        CURLOPT_CONNECTTIMEOUT => 2
-    ]);
+    // Native stream context (guaranteed built-in PHP support, no DLL needed)
+    $httpOptions = [
+        "http" => [
+            "method" => "POST",
+            "header" => "Content-Type: application/json\r\nAccept: application/json\r\nConnection: close\r\n",
+            "content" => $payload,
+            "timeout" => 15,
+            "ignore_errors" => true
+        ]
+    ];
+    $context = stream_context_create($httpOptions);
+    $response = @file_get_contents($url, false, $context);
 
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($response !== false && $httpCode >= 200 && $httpCode < 300) {
+    if ($response !== false) {
         $decoded = json_decode($response, true);
         $content = trim($decoded["message"]["content"] ?? "");
         if (!empty($content)) {
             return $content;
         }
     }
+
+    // Fallback to cURL if available
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_CONNECTTIMEOUT => 2
+        ]);
+        $curlResponse = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($curlResponse !== false && $httpCode >= 200 && $httpCode < 300) {
+            $decoded = json_decode($curlResponse, true);
+            $content = trim($decoded["message"]["content"] ?? "");
+            if (!empty($content)) {
+                return $content;
+            }
+        }
+    }
+
     return null;
 }
 
