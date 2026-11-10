@@ -14,36 +14,104 @@ if (!$userId) {
 }
 
 $medId = (int) ($data["medication_id"] ?? $data["id"] ?? 0);
-$rawStatus = ucfirst(strtolower(trim($data["status"] ?? "Taken")));
+$medName = trim((string) ($data["medication_name"] ?? $data["name"] ?? ""));
+$snoozeMinutes = (int) ($data["snooze_minutes"] ?? 0);
+$newReminderTime = trim((string) ($data["new_reminder_time"] ?? $data["reminder_time"] ?? ""));
 
-$allowed = ["Taken", "Missed", "Upcoming"];
+$statusInput = strtolower(trim((string) ($data["status"] ?? "Taken")));
+$statusMap = [
+    "taken" => "Taken",
+    "take" => "Taken",
+    "completed" => "Taken",
+    "skipped" => "Skipped",
+    "skip" => "Skipped",
+    "missed" => "Missed",
+    "miss" => "Missed",
+    "snoozed" => "Snoozed",
+    "snooze" => "Snoozed",
+    "upcoming" => "Upcoming"
+];
+
+$rawStatus = $statusMap[$statusInput] ?? ucfirst($statusInput);
+$allowed = ["Taken", "Skipped", "Missed", "Snoozed", "Upcoming"];
+
 if (!in_array($rawStatus, $allowed, true)) {
-    respond(false, "Invalid status. Allowed values: Taken, Missed, Upcoming.", 400);
+    respond(false, "Invalid status. Allowed values: Taken, Skipped, Missed, Snoozed, Upcoming.", 400);
 }
 
-if ($medId <= 0) {
-    respond(false, "Valid medication_id is required.", 400);
+if ($medId <= 0 && $medName === "") {
+    respond(false, "Valid medication_id or medication_name is required.", 400);
 }
 
 try {
-    $stmt = $pdo->prepare(
-        "UPDATE medications 
-         SET status = :status, updated_at = CURRENT_TIMESTAMP
-         WHERE id = :id AND user_id = :user_id"
-    );
-    $stmt->execute([
-        ":status" => $rawStatus,
-        ":id" => $medId,
-        ":user_id" => $userId
-    ]);
+    $targetRow = null;
 
-    if ($stmt->rowCount() === 0) {
+    // 1. Primary lookup by exact medication ID and user_id
+    if ($medId > 0) {
+        $findStmt = $pdo->prepare(
+            "SELECT id, user_id, name, dose, reminder_time, reminder_date, status
+             FROM medications
+             WHERE id = :id AND user_id = :user_id
+             LIMIT 1"
+        );
+        $findStmt->execute([":id" => $medId, ":user_id" => $userId]);
+        $targetRow = $findStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
+    // 2. Fallback lookup by exact medication name for the user (handles legacy hash IDs / test alarms)
+    if (!$targetRow && $medName !== "") {
+        $nameStmt = $pdo->prepare(
+            "SELECT id, user_id, name, dose, reminder_time, reminder_date, status
+             FROM medications
+             WHERE user_id = :user_id AND LOWER(TRIM(name)) = LOWER(TRIM(:name))
+             ORDER BY reminder_date DESC, id DESC
+             LIMIT 1"
+        );
+        $nameStmt->execute([":user_id" => $userId, ":name" => $medName]);
+        $targetRow = $nameStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
+    if (!$targetRow) {
         respond(false, "Medication not found or unauthorized.", 404);
     }
 
+    $targetMedId = (int) $targetRow["id"];
+    $updatedTimeSql = $targetRow["reminder_time"];
+
+    // Update reminder_time if snoozed and a valid new time or snooze_minutes was provided
+    if ($rawStatus === "Snoozed") {
+        if ($newReminderTime !== "" && preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $newReminderTime)) {
+            $updatedTimeSql = (strlen($newReminderTime) === 5) ? ($newReminderTime . ":00") : $newReminderTime;
+        } elseif ($snoozeMinutes > 0) {
+            $baseTs = strtotime($targetRow["reminder_time"]);
+            if ($baseTs !== false) {
+                $updatedTimeSql = date("H:i:s", $baseTs + ($snoozeMinutes * 60));
+            }
+        }
+    }
+
+    $updateStmt = $pdo->prepare(
+        "UPDATE medications
+         SET status = :status,
+             reminder_time = :reminder_time,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = :id AND user_id = :user_id"
+    );
+    $updateStmt->execute([
+        ":status" => $rawStatus,
+        ":reminder_time" => $updatedTimeSql,
+        ":id" => $targetMedId,
+        ":user_id" => $userId
+    ]);
+
+    $formattedTime = date("g:i A", strtotime($updatedTimeSql));
+
     respond(true, "Medication status updated to {$rawStatus}.", 200, [
-        "medication_id" => $medId,
+        "medication_id" => $targetMedId,
+        "name" => $targetRow["name"],
         "status" => $rawStatus,
+        "reminder_time" => $formattedTime,
+        "raw_time" => $updatedTimeSql,
         "updated_at" => date("Y-m-d H:i:s")
     ]);
 
@@ -51,4 +119,3 @@ try {
     error_log("Medication status update error: " . $e->getMessage());
     respond(false, "Database error updating medication status.", 500);
 }
-

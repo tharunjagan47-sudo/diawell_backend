@@ -81,6 +81,7 @@ ensureMedicationsSchema($pdo);
 
 $formattedMeds = [];
 $takenCount = 0;
+$upcomingCount = 0;
 
 try {
     $stmt = $pdo->prepare(
@@ -88,22 +89,30 @@ try {
                 therapeutic_class, manufacturer, primary_ingredient, packaging, dosage_form, is_active, created_at
          FROM medications
          WHERE user_id = :user_id AND (reminder_date = :date OR frequency = 'Daily')
-         ORDER BY reminder_time ASC"
+         ORDER BY reminder_time ASC, id DESC"
     );
     $stmt->execute([":user_id" => $userId, ":date" => $selectedDate]);
     $meds = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     foreach ($meds as $row) {
-        $status = ucfirst(strtolower($row["status"] ?? "Upcoming"));
+        $status = ucfirst(strtolower(trim($row["status"] ?? "Upcoming")));
         if ($status === "Taken") {
             $takenCount++;
             $statusColor = "#2E7D32";
             $statusBg = "#E8F5E9";
+        } elseif ($status === "Snoozed") {
+            $upcomingCount++;
+            $statusColor = "#1565C0";
+            $statusBg = "#E3F2FD";
+        } elseif ($status === "Skipped") {
+            $statusColor = "#C62828";
+            $statusBg = "#FFEBEE";
         } elseif ($status === "Missed") {
             $statusColor = "#C62828";
             $statusBg = "#FFEBEE";
         } else {
             $status = "Upcoming";
+            $upcomingCount++;
             $statusColor = "#B81D85";
             $statusBg = "#FDEEF7";
         }
@@ -147,7 +156,7 @@ $dataPayload = [
     "stats" => [
         "total" => $totalCount,
         "taken" => $takenCount,
-        "upcoming" => $totalCount - $takenCount,
+        "upcoming" => $upcomingCount,
         "adherence_percent" => $adherencePercent
     ],
     "medications" => $formattedMeds

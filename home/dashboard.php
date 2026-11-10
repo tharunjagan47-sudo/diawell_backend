@@ -60,16 +60,82 @@ try {
     $totalCarbs = round((float) ($nutrition["total_carbs"] ?? 0));
     $totalProtein = round((float) ($nutrition["total_protein"] ?? 0));
 
-    // 4. Next upcoming medication
+    // 4. Today's medications summary (prioritize pending Upcoming/Snoozed, otherwise reflect latest Taken/Skipped/Missed)
     $mStmt = $pdo->prepare(
-        "SELECT name, dose, reminder_time, status 
+        "SELECT name, dose, reminder_time, status, updated_at
          FROM medications 
-         WHERE user_id = :user_id AND (reminder_date = :today OR frequency = 'Daily') AND status = 'Upcoming'
-         ORDER BY reminder_time ASC 
-         LIMIT 1"
+         WHERE user_id = :user_id AND (reminder_date = :today OR frequency = 'Daily')
+         ORDER BY CASE 
+             WHEN LOWER(status) = 'snoozed' THEN 0
+             WHEN LOWER(status) = 'upcoming' THEN 1
+             ELSE 2
+         END ASC, reminder_time ASC, updated_at DESC"
     );
     $mStmt->execute([":user_id" => $userId, ":today" => $today]);
-    $nextMed = $mStmt->fetch();
+    $allTodayMeds = $mStmt->fetchAll() ?: [];
+
+    $medMetricValue = "No Meds Set";
+    $medMetricSubtitle = "Tap View to schedule";
+    $medMetricStatusText = "No Reminders";
+    $medMetricStatusBg = "#F3F4F6";
+    $medMetricStatusColor = "#4B5563";
+
+    if (!empty($allTodayMeds)) {
+        // Count statuses
+        $takenMedCount = 0;
+        $skippedMedCount = 0;
+        $pendingMed = null;
+        $latestUpdatedMed = $allTodayMeds[0];
+
+        foreach ($allTodayMeds as $m) {
+            $st = ucfirst(strtolower(trim($m["status"] ?? "Upcoming")));
+            if ($st === "Taken") {
+                $takenMedCount++;
+            } elseif ($st === "Skipped" || $st === "Missed") {
+                $skippedMedCount++;
+            } elseif ($pendingMed === null && ($st === "Upcoming" || $st === "Snoozed")) {
+                $pendingMed = $m;
+            }
+        }
+
+        if ($pendingMed !== null) {
+            $pStatus = ucfirst(strtolower(trim($pendingMed["status"] ?? "Upcoming")));
+            $medMetricValue = $pendingMed["name"];
+            $medMetricSubtitle = $pendingMed["dose"] . " • " . date("g:i A", strtotime($pendingMed["reminder_time"]));
+            if ($pStatus === "Snoozed") {
+                $medMetricStatusText = "Snoozed Dose";
+                $medMetricStatusBg = "#E3F2FD";
+                $medMetricStatusColor = "#1565C0";
+            } else {
+                $medMetricStatusText = "Upcoming Dose";
+                $medMetricStatusBg = "#FFF3E0";
+                $medMetricStatusColor = "#E65100";
+            }
+        } else {
+            // Find the most recently updated medication when none are pending
+            usort($allTodayMeds, function ($a, $b) {
+                return strcmp($b["updated_at"] ?? "", $a["updated_at"] ?? "");
+            });
+            $latestUpdatedMed = $allTodayMeds[0];
+            $lStatus = ucfirst(strtolower(trim($latestUpdatedMed["status"] ?? "Taken")));
+            $medMetricValue = $latestUpdatedMed["name"];
+            $medMetricSubtitle = $latestUpdatedMed["dose"] . " • " . date("g:i A", strtotime($latestUpdatedMed["reminder_time"]));
+
+            if ($skippedMedCount === 0 && $takenMedCount > 0) {
+                $medMetricStatusText = "All Doses Taken";
+                $medMetricStatusBg = "#E8F5E9";
+                $medMetricStatusColor = "#2E7D32";
+            } elseif ($lStatus === "Taken") {
+                $medMetricStatusText = "Dose Taken ({$takenMedCount}/" . count($allTodayMeds) . ")";
+                $medMetricStatusBg = "#E8F5E9";
+                $medMetricStatusColor = "#2E7D32";
+            } else {
+                $medMetricStatusText = "Dose {$lStatus}";
+                $medMetricStatusBg = "#FFEBEE";
+                $medMetricStatusColor = "#C62828";
+            }
+        }
+    }
 
     // 5. Calculate 7-day logging streak
     $streakDays = 1;
@@ -169,11 +235,11 @@ try {
             ],
             "medication" => [
                 "title" => "Medication",
-                "value" => $nextMed ? $nextMed["name"] : "Metformin",
-                "subtitle" => $nextMed ? ($nextMed["dose"] . " • " . date("g:i A", strtotime($nextMed["reminder_time"]))) : "500mg • 8:00 PM",
-                "status_text" => $nextMed ? "Upcoming Dose" : "All Doses Taken",
-                "status_bg" => "#FFF3E0",
-                "status_color" => "#E65100"
+                "value" => $medMetricValue,
+                "subtitle" => $medMetricSubtitle,
+                "status_text" => $medMetricStatusText,
+                "status_bg" => $medMetricStatusBg,
+                "status_color" => $medMetricStatusColor
             ],
             "weekly_progress" => [
                 "title" => "Weekly Report",
