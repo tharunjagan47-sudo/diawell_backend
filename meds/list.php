@@ -88,8 +88,13 @@ try {
         "SELECT id, user_id, name, dose, reminder_time, reminder_date, timing, frequency, status, notes,
                 therapeutic_class, manufacturer, primary_ingredient, packaging, dosage_form, is_active, created_at
          FROM medications
-         WHERE user_id = :user_id AND (reminder_date = :date OR frequency = 'Daily')
-         ORDER BY reminder_time ASC, id DESC"
+         WHERE user_id = :user_id
+           AND (
+               reminder_date = :date
+               OR LOWER(frequency) = 'daily'
+               OR (reminder_date > :date AND status IN ('Upcoming', 'Snoozed'))
+           )
+         ORDER BY reminder_date ASC, reminder_time ASC, id DESC"
     );
     $stmt->execute([":user_id" => $userId, ":date" => $selectedDate]);
     $meds = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];

@@ -14,7 +14,7 @@ $dose = trim($data["dose"] ?? $data["medication_dose"] ?? $data["medicationDose"
 $rawTime = trim($data["reminder_time"] ?? $data["selectedTime"] ?? "08:00:00");
 $rawDate = trim($data["reminder_date"] ?? $data["reminderDateText"] ?? date("Y-m-d"));
 $timing = trim($data["timing"] ?? $data["selectedTiming"] ?? "After Meal");
-$frequency = trim($data["frequency"] ?? "Daily");
+$frequency = trim($data["frequency"] ?? "Once");
 $notes = trim($data["notes"] ?? "");
 $therapeuticClass = trim($data["therapeutic_class"] ?? $data["category"] ?? "");
 $manufacturer = trim($data["manufacturer"] ?? "");
@@ -26,9 +26,17 @@ if ($name === "") {
     respond(false, "Medication name is required.", 400);
 }
 
-// Normalize date
-$parsedDate = strtotime($rawDate);
-$reminderDate = ($parsedDate !== false) ? date("Y-m-d", $parsedDate) : date("Y-m-d");
+// Normalize date & frequency
+if (strcasecmp($rawDate, "Daily") === 0) {
+    $frequency = "Daily";
+    $reminderDate = date("Y-m-d");
+} else {
+    $parsedDate = strtotime($rawDate);
+    $reminderDate = ($parsedDate !== false) ? date("Y-m-d", $parsedDate) : date("Y-m-d");
+}
+if ($frequency === "") {
+    $frequency = "Once";
+}
 
 // Normalize time
 $parsedTime = strtotime($rawTime);
