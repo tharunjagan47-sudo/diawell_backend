@@ -16,8 +16,9 @@ if ($method === "GET") {
 
     try {
         $stmt = $pdo->prepare(
-            "SELECT id, full_name, email, diabetes_type, age, height_cm, weight_kg, 
-                    profile_photo, current_glucose_mg_dl, target_glucose_mg_dl, created_at 
+            "SELECT id, full_name, email, phone, gender, diabetes_type, age, height_cm, weight_kg, 
+                    profile_photo, current_glucose_mg_dl, target_glucose_mg_dl,
+                    target_fasting_glucose, target_postmeal_glucose, created_at 
              FROM users 
              WHERE id = :id 
              LIMIT 1"
@@ -38,10 +39,14 @@ if ($method === "GET") {
             "user_id" => (int) $user["id"],
             "full_name" => $user["full_name"],
             "email" => $user["email"],
+            "phone" => $user["phone"] ?? "",
+            "gender" => $user["gender"] ?? "Male",
             "diabetes_type" => $user["diabetes_type"] ?? "Type 2",
             "age" => $user["age"] !== null ? (int) $user["age"] : null,
             "height_cm" => $user["height_cm"] !== null ? (float) $user["height_cm"] : null,
             "weight_kg" => $user["weight_kg"] !== null ? (float) $user["weight_kg"] : null,
+            "target_fasting_glucose" => $user["target_fasting_glucose"] !== null ? (int) $user["target_fasting_glucose"] : 100,
+            "target_postmeal_glucose" => $user["target_postmeal_glucose"] !== null ? (int) $user["target_postmeal_glucose"] : 140,
             "profile_photo" => $user["profile_photo"],
             "profile_photo_url" => $photoUrl
         ]);
@@ -65,11 +70,15 @@ if ($method === "POST" || $method === "PUT") {
 
     $full_name = trim($data["full_name"] ?? $data["fullName"] ?? "");
     $email = trim($data["email"] ?? "");
+    $phone = trim($data["phone"] ?? "");
+    $gender = trim($data["gender"] ?? "");
     $rawDiabetesType = $data["diabetes_type"] ?? $data["diabetesType"] ?? null;
     $diabetes_type = $rawDiabetesType ? normalizeDiabetesType($rawDiabetesType) : null;
     $age = parseNumericValue($data["age"] ?? null);
     $height = parseNumericValue($data["height_cm"] ?? $data["height"] ?? null);
     $weight = parseNumericValue($data["weight_kg"] ?? $data["weight"] ?? null);
+    $targetFasting = parseNumericValue($data["target_fasting_glucose"] ?? null);
+    $targetPostmeal = parseNumericValue($data["target_postmeal_glucose"] ?? null);
 
     // Validate name if provided
     if ($full_name !== "" && mb_strlen($full_name) > 100) {
@@ -103,30 +112,42 @@ if ($method === "POST" || $method === "PUT") {
         // Keep current values if new ones are blank/null
         $updatedName = ($full_name !== "") ? $full_name : $currentUser["full_name"];
         $updatedEmail = ($email !== "") ? $email : $currentUser["email"];
+        $updatedPhone = ($phone !== "") ? $phone : ($currentUser["phone"] ?? "");
+        $updatedGender = ($gender !== "") ? $gender : ($currentUser["gender"] ?? "Male");
         $updatedDiabetes = $diabetes_type ?: $currentUser["diabetes_type"];
         $updatedAge = ($age !== null) ? (int) $age : $currentUser["age"];
         $updatedHeight = ($height !== null) ? (float) $height : $currentUser["height_cm"];
         $updatedWeight = ($weight !== null) ? (float) $weight : $currentUser["weight_kg"];
+        $updatedTargetFasting = ($targetFasting !== null) ? (int) $targetFasting : ($currentUser["target_fasting_glucose"] ?? 100);
+        $updatedTargetPostmeal = ($targetPostmeal !== null) ? (int) $targetPostmeal : ($currentUser["target_postmeal_glucose"] ?? 140);
 
         // Update database
         $update = $pdo->prepare(
             "UPDATE users SET
                 full_name = :full_name,
                 email = :email,
+                phone = :phone,
+                gender = :gender,
                 diabetes_type = :diabetes_type,
                 age = :age,
                 height_cm = :height_cm,
-                weight_kg = :weight_kg
+                weight_kg = :weight_kg,
+                target_fasting_glucose = :target_fasting,
+                target_postmeal_glucose = :target_postmeal
              WHERE id = :id"
         );
 
         $update->execute([
             ":full_name" => $updatedName,
             ":email" => $updatedEmail,
+            ":phone" => $updatedPhone,
+            ":gender" => $updatedGender,
             ":diabetes_type" => $updatedDiabetes,
             ":age" => $updatedAge,
             ":height_cm" => $updatedHeight,
             ":weight_kg" => $updatedWeight,
+            ":target_fasting" => $updatedTargetFasting,
+            ":target_postmeal" => $updatedTargetPostmeal,
             ":id" => $userId
         ]);
 
@@ -139,10 +160,14 @@ if ($method === "POST" || $method === "PUT") {
             "user_id" => $userId,
             "full_name" => $updatedName,
             "email" => $updatedEmail,
+            "phone" => $updatedPhone,
+            "gender" => $updatedGender,
             "diabetes_type" => $updatedDiabetes,
             "age" => $updatedAge !== null ? (int) $updatedAge : null,
             "height_cm" => $updatedHeight !== null ? (float) $updatedHeight : null,
             "weight_kg" => $updatedWeight !== null ? (float) $updatedWeight : null,
+            "target_fasting_glucose" => $updatedTargetFasting,
+            "target_postmeal_glucose" => $updatedTargetPostmeal,
             "profile_photo" => $currentUser["profile_photo"],
             "profile_photo_url" => $photoUrl
         ]);

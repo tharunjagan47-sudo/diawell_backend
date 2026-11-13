@@ -75,15 +75,15 @@ function respondWithFoodDetails($food, $foodId, $dishName) {
 }
 
 // -------------------------------------------------------------
-// 1. Try querying the Python AI Microservice by ID or Name (only if active)
+// 1. Try querying the Python AI Microservice by ID or Name
 // -------------------------------------------------------------
-if (isMicroserviceAvailable($pythonServiceUrl, 0.05)) {
+if (function_exists('curl_init')) {
     if ($foodId >= 1000) {
         $ch = curl_init($pythonServiceUrl . "/food/id/" . $foodId);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 3,
-            CURLOPT_CONNECTTIMEOUT => 1
+            CURLOPT_TIMEOUT => 4,
+            CURLOPT_CONNECTTIMEOUT => 2
         ]);
         $responseBody = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -101,8 +101,8 @@ if (isMicroserviceAvailable($pythonServiceUrl, 0.05)) {
         $ch = curl_init($pythonServiceUrl . "/food/" . rawurlencode($dishName));
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 3,
-            CURLOPT_CONNECTTIMEOUT => 1
+            CURLOPT_TIMEOUT => 4,
+            CURLOPT_CONNECTTIMEOUT => 2
         ]);
         $responseBody = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -118,7 +118,7 @@ if (isMicroserviceAvailable($pythonServiceUrl, 0.05)) {
 }
 
 // -------------------------------------------------------------
-// 2. Direct CSV Dataset Lookup Fallback (instant <5ms)
+// 2. Direct CSV Dataset Lookup Fallback
 // -------------------------------------------------------------
 if (file_exists($csvPath)) {
     $handle = fopen($csvPath, "r");
@@ -143,10 +143,7 @@ if (file_exists($csvPath)) {
 
         $currentId = 1001;
         $matchedRow = null;
-        $nonVegWords = ["chicken", "mutton", "fish", "egg", "prawn", "keema", "meat", "pork", "beef", "shrimp", "seafood", "duck", "crab", "omlet", "omelette", "bhurji"];
-        $breakfastWords = ["oats", "idli", "dosa", "poha", "upma", "paratha", "pancake", "toast", "cornflakes", "porridge", "thepla", "cheela", "chilla", "puri", "upama"];
-        $snackWords = ["snack", "chaat", "tikki", "pakoda", "pakora", "samosa", "cutlet", "biscuit", "cookie", "roll", "kebab", "vada", "bhel", "chivda", "sprouts", "salad", "soup"];
-        $beverageWords = ["tea", "chai", "coffee", "cooler", "juice", "drink", "shake", "smoothie", "water", "punch", "lemonade", "cocoa"];
+        $nonVegWords = ["chicken", "mutton", "fish", "egg", "prawn", "keema", "meat", "pork", "beef", "shrimp", "seafood"];
 
         while (($row = fgetcsv($handle)) !== false) {
             $name = trim($row[$colMap["dish"] ?? 0] ?? "");
@@ -161,22 +158,6 @@ if (file_exists($csvPath)) {
 
             if ($isMatch) {
                 $nameLower = strtolower($name);
-
-                $dishCat = "Lunch/Dinner";
-                foreach ($beverageWords as $bw) {
-                    if (strpos($nameLower, $bw) !== false) { $dishCat = "Beverage"; break; }
-                }
-                if ($dishCat === "Lunch/Dinner") {
-                    foreach ($breakfastWords as $bw) {
-                        if (strpos($nameLower, $bw) !== false) { $dishCat = "Breakfast"; break; }
-                    }
-                }
-                if ($dishCat === "Lunch/Dinner") {
-                    foreach ($snackWords as $sw) {
-                        if (strpos($nameLower, $sw) !== false) { $dishCat = "Snack"; break; }
-                    }
-                }
-
                 $isNonVeg = false;
                 foreach ($nonVegWords as $w) {
                     if (strpos($nameLower, $w) !== false) {
@@ -200,7 +181,7 @@ if (file_exists($csvPath)) {
                     "iron_mg" => isset($colMap["iron"]) && is_numeric($row[$colMap["iron"]]) ? (float)$row[$colMap["iron"]] : 0,
                     "vitamin_c_mg" => isset($colMap["vit_c"]) && is_numeric($row[$colMap["vit_c"]]) ? (float)$row[$colMap["vit_c"]] : 0,
                     "folate_ug" => isset($colMap["folate"]) && is_numeric($row[$colMap["folate"]]) ? (float)$row[$colMap["folate"]] : 0,
-                    "category" => $dishCat,
+                    "category" => "Lunch/Dinner",
                     "diet_type" => $isNonVeg ? "Non-Vegetarian" : "Vegetarian",
                     "portion" => "100 g portion basis",
                     "icon" => $isNonVeg ? "🍗" : "🥗"

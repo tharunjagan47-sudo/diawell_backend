@@ -30,94 +30,95 @@ try {
         }
     }
 
-    // 1. Try querying the Python AI service dataset first (only if available)
-    if (isMicroserviceAvailable($pythonServiceUrl, 0.05)) {
-        $queryParams = [
-            "page" => $page,
-            "limit" => $limit,
-            "sort_by" => $sortBy,
-            "sort_order" => $sortOrder
-        ];
-        if ($searchQuery !== "") {
-            $queryParams["query"] = $searchQuery;
-        }
-        if ($category !== "" && strcasecmp($category, "All") !== 0) {
-            $queryParams["category"] = $category;
-        }
-        if ($dietType !== "") {
-            $queryParams["diet_type"] = $dietType;
-        }
+    // 1. Try querying the Python AI service dataset first
+    $queryParams = [
+        "page" => $page,
+        "limit" => $limit,
+        "sort_by" => $sortBy,
+        "sort_order" => $sortOrder
+    ];
+    if ($searchQuery !== "") {
+        $queryParams["query"] = $searchQuery;
+    }
+    if ($category !== "" && strcasecmp($category, "All") !== 0) {
+        $queryParams["category"] = $category;
+    }
+    if ($dietType !== "") {
+        $queryParams["diet_type"] = $dietType;
+    }
 
+    if (function_exists('curl_init')) {
         $ch = curl_init($pythonServiceUrl . "/search?" . http_build_query($queryParams));
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 3,
-            CURLOPT_CONNECTTIMEOUT => 1
+            CURLOPT_TIMEOUT => 4,
+            CURLOPT_CONNECTTIMEOUT => 2
         ]);
         $responseBody = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         if ($responseBody !== false && $httpCode === 200) {
-            $parsed = json_decode($responseBody, true);
-            if ($parsed && isset($parsed["success"]) && $parsed["success"] && isset($parsed["data"])) {
-                $data = $parsed["data"];
-                $items = $data["items"] ?? [];
+        $parsed = json_decode($responseBody, true);
+        if ($parsed && isset($parsed["success"]) && $parsed["success"] && isset($parsed["data"])) {
+            $data = $parsed["data"];
+            $items = $data["items"] ?? [];
 
-                $formattedFoods = [];
-                foreach ($items as $item) {
-                    $isPreferred = (strcasecmp($item["diet_type"] ?? "Vegetarian", $userDietPref) === 0);
-                    $carbs = (float) ($item["carbs_g"] ?? 0.0);
-                    $fiber = (float) ($item["fibre_g"] ?? 0.0);
-                    $sugar = (float) ($item["free_sugar_g"] ?? 0.0);
+            $formattedFoods = [];
+            foreach ($items as $item) {
+                $isPreferred = (strcasecmp($item["diet_type"] ?? "Vegetarian", $userDietPref) === 0);
+                $carbs = (float) ($item["carbs_g"] ?? 0.0);
+                $fiber = (float) ($item["fibre_g"] ?? 0.0);
+                $sugar = (float) ($item["free_sugar_g"] ?? 0.0);
 
-                    $netCarbs = max(0.0, $carbs - $fiber);
-                    $gi = "Low";
-                    if ($netCarbs > 30.0 || $sugar > 6.0) {
-                        $gi = "High";
-                    } elseif ($netCarbs > 15.0 || $sugar > 2.0) {
-                        $gi = "Medium";
-                    }
-
-                    $formattedFoods[] = [
-                        "id" => (int) $item["id"],
-                        "title" => $item["title"],
-                        "category" => $item["category"] ?? "Lunch/Dinner",
-                        "diet_type" => $item["diet_type"] ?? "Vegetarian",
-                        "is_user_preference" => $isPreferred,
-                        "preference_tag" => $isPreferred ? "{$item["diet_type"]} • your preference" : ($item["diet_type"] ?? "Vegetarian"),
-                        "portion" => $item["portion"] ?? "100 g portion basis",
-                        "calories" => ($item["calories"] !== null ? round($item["calories"]) . " kcal" : "Unknown"),
-                        "calories_num" => (int) ($item["calories"] ?? 0),
-                        "carbs_g" => $carbs,
-                        "protein_g" => (float) ($item["protein_g"] ?? 0.0),
-                        "fat_g" => (float) ($item["fat_g"] ?? 0.0),
-                        "fiber_g" => $fiber,
-                        "free_sugar_g" => $sugar,
-                        "sodium_mg" => (float) ($item["sodium_mg"] ?? 0.0),
-                        "glycemic_index" => $gi,
-                        "icon" => $item["icon"] ?? "🥗",
-                        "health_benefits" => "Dataset verified Indian cuisine: {$carbs}g carbs, {$fiber}g fibre, {$sugar}g sugar."
-                    ];
+                // Estimate glycemic index from dataset metrics (net carbs & sugar)
+                $netCarbs = max(0.0, $carbs - $fiber);
+                $gi = "Low";
+                if ($netCarbs > 30.0 || $sugar > 6.0) {
+                    $gi = "High";
+                } elseif ($netCarbs > 15.0 || $sugar > 2.0) {
+                    $gi = "Medium";
                 }
 
-                respond(true, "Foods retrieved successfully from nutrition dataset.", 200, [
-                    "source" => "python_dataset",
-                    "search_query" => $searchQuery,
-                    "category" => $category,
-                    "user_preference" => $userDietPref,
-                    "count" => count($formattedFoods),
-                    "total_items" => $data["total"] ?? count($formattedFoods),
-                    "page" => $data["page"] ?? $page,
-                    "limit" => $data["limit"] ?? $limit,
-                    "total_pages" => $data["total_pages"] ?? 1,
-                    "foods" => $formattedFoods
-                ]);
+                $formattedFoods[] = [
+                    "id" => (int) $item["id"],
+                    "title" => $item["title"],
+                    "category" => $item["category"] ?? "Lunch/Dinner",
+                    "diet_type" => $item["diet_type"] ?? "Vegetarian",
+                    "is_user_preference" => $isPreferred,
+                    "preference_tag" => $isPreferred ? "{$item["diet_type"]} • your preference" : ($item["diet_type"] ?? "Vegetarian"),
+                    "portion" => $item["portion"] ?? "100 g portion basis",
+                    "calories" => ($item["calories"] !== null ? round($item["calories"]) . " kcal" : "Unknown"),
+                    "calories_num" => (int) ($item["calories"] ?? 0),
+                    "carbs_g" => $carbs,
+                    "protein_g" => (float) ($item["protein_g"] ?? 0.0),
+                    "fat_g" => (float) ($item["fat_g"] ?? 0.0),
+                    "fiber_g" => $fiber,
+                    "free_sugar_g" => $sugar,
+                    "sodium_mg" => (float) ($item["sodium_mg"] ?? 0.0),
+                    "glycemic_index" => $gi,
+                    "icon" => $item["icon"] ?? "🥗",
+                    "health_benefits" => "Dataset verified Indian cuisine: {$carbs}g carbs, {$fiber}g fibre, {$sugar}g sugar."
+                ];
             }
+
+            respond(true, "Foods retrieved successfully from nutrition dataset.", 200, [
+                "source" => "python_dataset",
+                "search_query" => $searchQuery,
+                "category" => $category,
+                "user_preference" => $userDietPref,
+                "count" => count($formattedFoods),
+                "total_items" => $data["total"] ?? count($formattedFoods),
+                "page" => $data["page"] ?? $page,
+                "limit" => $data["limit"] ?? $limit,
+                "total_pages" => $data["total_pages"] ?? 1,
+                "foods" => $formattedFoods
+            ]);
         }
     }
+    }
 
-    // 2. High-Performance Direct CSV Dataset Search (runs in <10ms)
+    // 2. Resilient CSV Fallback for Explore Food
     if (file_exists($csvPath)) {
         $handle = fopen($csvPath, "r");
         if ($handle !== false) {
@@ -135,11 +136,7 @@ try {
                 elseif (stripos($clean, "Sodium") !== false) $colMap["sodium"] = $idx;
             }
 
-            $nonVegWords = ["chicken", "mutton", "fish", "egg", "prawn", "keema", "meat", "pork", "beef", "shrimp", "seafood", "duck", "crab", "omlet", "omelette", "bhurji"];
-            $breakfastWords = ["oats", "idli", "dosa", "poha", "upma", "paratha", "pancake", "toast", "cornflakes", "porridge", "thepla", "cheela", "chilla", "puri", "upama"];
-            $snackWords = ["snack", "chaat", "tikki", "pakoda", "pakora", "samosa", "cutlet", "biscuit", "cookie", "roll", "kebab", "vada", "bhel", "chivda", "sprouts", "salad", "soup"];
-            $beverageWords = ["tea", "chai", "coffee", "cooler", "juice", "drink", "shake", "smoothie", "water", "punch", "lemonade", "cocoa"];
-
+            $nonVegWords = ["chicken", "mutton", "fish", "egg", "prawn", "keema", "meat", "pork", "beef", "shrimp", "seafood"];
             $matchedDishes = [];
             $itemId = 1001;
 
@@ -148,24 +145,6 @@ try {
                 if ($name === "") continue;
 
                 $nameLower = strtolower($name);
-
-                // Category classification
-                $dishCat = "Lunch/Dinner";
-                foreach ($beverageWords as $bw) {
-                    if (strpos($nameLower, $bw) !== false) { $dishCat = "Beverage"; break; }
-                }
-                if ($dishCat === "Lunch/Dinner") {
-                    foreach ($breakfastWords as $bw) {
-                        if (strpos($nameLower, $bw) !== false) { $dishCat = "Breakfast"; break; }
-                    }
-                }
-                if ($dishCat === "Lunch/Dinner") {
-                    foreach ($snackWords as $sw) {
-                        if (strpos($nameLower, $sw) !== false) { $dishCat = "Snack"; break; }
-                    }
-                }
-
-                // Diet type classification
                 $isNonVeg = false;
                 foreach ($nonVegWords as $w) {
                     if (strpos($nameLower, $w) !== false) {
@@ -179,14 +158,6 @@ try {
                 if ($searchQuery !== "" && stripos($name, $searchQuery) === false) {
                     $itemId++;
                     continue;
-                }
-
-                // Filter by category
-                if ($category !== "" && strcasecmp($category, "All") !== 0) {
-                    if (strcasecmp($dishCat, $category) !== 0) {
-                        $itemId++;
-                        continue;
-                    }
                 }
 
                 // Filter by diet type
@@ -212,7 +183,7 @@ try {
                 $matchedDishes[] = [
                     "id" => $itemId,
                     "title" => $name,
-                    "category" => $dishCat,
+                    "category" => "Lunch/Dinner",
                     "diet_type" => $dishDietType,
                     "is_user_preference" => $isPreferred,
                     "preference_tag" => $isPreferred ? "{$dishDietType} • your preference" : $dishDietType,
