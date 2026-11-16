@@ -209,22 +209,54 @@ try {
 
     // Daily routine check
     $bStmt = $pdo->prepare("SELECT count(*) FROM food_logs WHERE user_id = :uid AND log_date = :d AND LOWER(meal_category) = 'breakfast'");
+    $bStmt = $pdo->prepare(
+        "SELECT count(*) FROM food_logs 
+         WHERE user_id = :uid AND log_date = :d 
+         AND (LOWER(meal_category) LIKE '%breakfast%' OR LOWER(meal_category) LIKE '%morning%')"
+    );
     $bStmt->execute([":uid" => $userId, ":d" => $today]);
     $breakfastDone = ((int) $bStmt->fetchColumn()) > 0;
 
     $gCheckStmt = $pdo->prepare("SELECT count(*) FROM glucose_readings WHERE user_id = :uid AND reading_date = :d");
+    $gCheckStmt = $pdo->prepare(
+        "SELECT count(*) FROM glucose_readings 
+         WHERE user_id = :uid AND reading_date = :d"
+    );
     $gCheckStmt->execute([":uid" => $userId, ":d" => $today]);
     $glucoseDone = ((int) $gCheckStmt->fetchColumn()) > 0;
 
     $lStmt = $pdo->prepare("SELECT count(*) FROM food_logs WHERE user_id = :uid AND log_date = :d AND LOWER(meal_category) = 'lunch'");
+    $lStmt = $pdo->prepare(
+        "SELECT count(*) FROM food_logs 
+         WHERE user_id = :uid AND log_date = :d 
+         AND (
+             LOWER(meal_category) LIKE '%lunch%' 
+             OR (LOWER(meal_category) LIKE '%lunch/dinner%' AND (HOUR(log_time) < 16 OR log_time = '00:00:00'))
+             OR (LOWER(meal_category) LIKE '%snack%' AND HOUR(log_time) BETWEEN 11 AND 15)
+         )"
+    );
     $lStmt->execute([":uid" => $userId, ":d" => $today]);
     $lunchDone = ((int) $lStmt->fetchColumn()) > 0;
 
     $dStmt = $pdo->prepare("SELECT count(*) FROM food_logs WHERE user_id = :uid AND log_date = :d AND LOWER(meal_category) = 'dinner'");
+    $dStmt = $pdo->prepare(
+        "SELECT count(*) FROM food_logs 
+         WHERE user_id = :uid AND log_date = :d 
+         AND (
+             LOWER(meal_category) LIKE '%dinner%' 
+             OR LOWER(meal_category) LIKE '%night%'
+             OR (LOWER(meal_category) LIKE '%lunch/dinner%' AND HOUR(log_time) >= 16)
+             OR (LOWER(meal_category) LIKE '%snack%' AND HOUR(log_time) >= 18)
+         )"
+    );
     $dStmt->execute([":uid" => $userId, ":d" => $today]);
     $dinnerDone = ((int) $dStmt->fetchColumn()) > 0;
 
     $mCheckStmt = $pdo->prepare("SELECT count(*) FROM medications WHERE user_id = :uid AND (reminder_date = :d OR frequency = 'Daily') AND status = 'Taken'");
+    $mCheckStmt = $pdo->prepare(
+        "SELECT count(*) FROM medications 
+         WHERE user_id = :uid AND (reminder_date = :d OR frequency = 'Daily') AND status = 'Taken'"
+    );
     $mCheckStmt->execute([":uid" => $userId, ":d" => $today]);
     $medsDone = ((int) $mCheckStmt->fetchColumn()) > 0;
     $dinnerMedsDone = $dinnerDone || $medsDone;
@@ -297,11 +329,6 @@ try {
                 "status_text" => $weeklyProgressStatus,
                 "status_bg" => $weeklyProgressBg,
                 "status_color" => $weeklyProgressColor
-            ]
-        ]
-    ]);
-                "status_bg" => "#E3F2FD",
-                "status_color" => "#1565C0"
             ]
         ]
     ]);

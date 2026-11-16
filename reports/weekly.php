@@ -63,14 +63,17 @@ try {
 
     // 2. Nutrition stats in 7-day window
     $nStmt = $pdo->prepare(
-        "SELECT count(*) as meal_count, SUM(calories) as total_cal
+        "SELECT id, log_date, calories
          FROM food_logs 
          WHERE user_id = :user_id AND log_date BETWEEN :start AND :end"
     );
     $nStmt->execute([":user_id" => $userId, ":start" => $startDate, ":end" => $endDate]);
-    $nutr = $nStmt->fetch();
-    $totalMeals = (int) ($nutr["meal_count"] ?? 0);
-    $totalCalories = (int) ($nutr["total_cal"] ?? 0);
+    $foodLogs = $nStmt->fetchAll();
+    $totalMeals = count($foodLogs);
+    $totalCalories = 0;
+    foreach ($foodLogs as $fl) {
+        $totalCalories += (int) $fl["calories"];
+    }
     $avgDailyCalories = ($totalMeals > 0) ? round($totalCalories / 7) : 0;
 
     // 3. Medication adherence in 7-day window
@@ -98,8 +101,9 @@ try {
     $workoutCount = (int) ($act["workouts"] ?? 0);
     $activitySummaryLabel = ($workoutCount > 0) ? "{$activeMins} active minutes across {$workoutCount} workouts" : "No workouts logged";
 
-    // 5. Daily trend points for 7-day chart
+    // 5. Daily trend points for 7-day chart & daily meal counts
     $chartPoints = [];
+    $mealChartPoints = [];
     for ($i = 6; $i >= 0; $i--) {
         $d = date("Y-m-d", strtotime($endDate . " -{$i} days"));
         $dayValues = [];
@@ -114,6 +118,14 @@ try {
             "date" => date("j M", strtotime($d)),
             "average_glucose" => $dayAvg
         ];
+
+        $dayMeals = 0;
+        foreach ($foodLogs as $fl) {
+            if ($fl["log_date"] === $d) {
+                $dayMeals++;
+            }
+        }
+        $mealChartPoints[] = $dayMeals;
     }
 
     $weekLabel = date("j", strtotime($startDate)) . "–" . date("j M Y", strtotime($endDate));
@@ -134,7 +146,8 @@ try {
         "nutrition" => [
             "total_meals_logged" => $totalMeals,
             "total_calories" => number_format($totalCalories) . " kcal",
-            "daily_average_calories" => number_format($avgDailyCalories) . " kcal"
+            "daily_average_calories" => number_format($avgDailyCalories) . " kcal",
+            "meal_chart_data" => $mealChartPoints
         ],
         "medication" => [
             "adherence_percent" => $medAdherenceRate,
