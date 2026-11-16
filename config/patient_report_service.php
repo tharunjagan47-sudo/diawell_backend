@@ -284,10 +284,10 @@ function buildAndRespondPatientReport(PDO $pdo): void {
                     $inTargetCount++;
                 }
             }
-        } elseif ($patientProfile["current_glucose"] !== null && $patientProfile["current_glucose"] > 0) {
-            $avgGlucose = round((float) $patientProfile["current_glucose"], 1);
-            $minGlucose = $avgGlucose;
-            $maxGlucose = $avgGlucose;
+        } else {
+            $avgGlucose = 0.0;
+            $minGlucose = 0.0;
+            $maxGlucose = 0.0;
         }
 
         $inTargetPercent = $gCount > 0 ? (int) round(($inTargetCount / $gCount) * 100) : 0;

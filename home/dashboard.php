@@ -41,10 +41,27 @@ try {
     $gStmt->execute([":user_id" => $userId]);
     $latestGlucose = $gStmt->fetch();
 
-    $glucoseVal = $latestGlucose ? (float) $latestGlucose["glucose_value"] : (float) ($user["current_glucose_mg_dl"] ?? 128.0);
     $targetVal = (float) ($user["target_glucose_mg_dl"] ?? 120.0);
-    $glucoseStatus = ($glucoseVal <= ($targetVal + 20) && $glucoseVal >= ($targetVal - 30)) ? "In Target Range" : "Needs Attention";
-    $glucoseTime = $latestGlucose ? ($latestGlucose["reading_type"] . " • " . date("g:i A", strtotime($latestGlucose["reading_time"]))) : "Fasting • 7:15 AM";
+
+    if ($latestGlucose) {
+        $glucoseVal = (float) $latestGlucose["glucose_value"];
+        $glucoseStatus = ($glucoseVal <= ($targetVal + 20) && $glucoseVal >= ($targetVal - 30)) ? "In Target Range" : "Needs Attention";
+        $glucoseTime = $latestGlucose["reading_type"] . " • " . date("g:i A", strtotime($latestGlucose["reading_time"]));
+        $glucoseValStr = round($glucoseVal) . " mg/dL";
+        $glucoseValNum = $glucoseVal;
+        $glucoseStatusBg = ($glucoseStatus === "In Target Range") ? "#E8F5E9" : "#FFF3E0";
+        $glucoseStatusColor = ($glucoseStatus === "In Target Range") ? "#2E7D32" : "#E65100";
+        $targetBadge = ($glucoseStatus === "In Target Range") ? "🎯 Fasting Target Met" : "⚠️ Target: " . round($targetVal) . " mg/dL";
+    } else {
+        $glucoseVal = null;
+        $glucoseStatus = "No Readings Logged";
+        $glucoseTime = "Tap to log your first reading";
+        $glucoseValStr = "-- mg/dL";
+        $glucoseValNum = null;
+        $glucoseStatusBg = "#F3F4F6";
+        $glucoseStatusColor = "#6B7280";
+        $targetBadge = "🎯 Target: " . round($targetVal) . " mg/dL";
+    }
 
     // 3. Today's Nutrition stats
     $nStmt = $pdo->prepare(
@@ -74,11 +91,11 @@ try {
     $mStmt->execute([":user_id" => $userId, ":today" => $today]);
     $allTodayMeds = $mStmt->fetchAll() ?: [];
 
-    $medMetricValue = "No Meds Set";
-    $medMetricSubtitle = "Tap View to schedule";
+    $medMetricValue = "0 Active Medications";
+    $medMetricSubtitle = "No medications scheduled";
     $medMetricStatusText = "No Reminders";
     $medMetricStatusBg = "#F3F4F6";
-    $medMetricStatusColor = "#4B5563";
+    $medMetricStatusColor = "#6B7280";
 
     if (!empty($allTodayMeds)) {
         // Count statuses
@@ -137,32 +154,57 @@ try {
         }
     }
 
-    // 5. Calculate 7-day logging streak
-    $streakDays = 1;
+    // 5. Calculate 7-day logging streak (real calculation, 0 when no logs)
+    $streakDays = 0;
     for ($i = 0; $i < 7; $i++) {
         $checkDate = date("Y-m-d", strtotime("-{$i} days"));
         $sStmt = $pdo->prepare("SELECT id FROM glucose_readings WHERE user_id = :user_id AND reading_date = :d LIMIT 1");
         $sStmt->execute([":user_id" => $userId, ":d" => $checkDate]);
         if ($sStmt->fetch()) {
-            $streakDays = $i + 1;
+            $streakDays++;
         } else {
+            if ($i === 0) {
+                // Today not yet logged, continue checking yesterday
+                continue;
+            }
             break;
         }
     }
-    if ($streakDays === 0) $streakDays = 7; // demo default
+    $streakBadge = ($streakDays > 0) ? "🔥 {$streakDays} Day Logging Streak" : "⚡ Start your streak today";
+
+    // 6. Calculate 7-day weekly progress (days with either glucose or meal logs)
+    $wStmt = $pdo->prepare(
+        "SELECT COUNT(DISTINCT d) FROM (
+            SELECT reading_date AS d FROM glucose_readings WHERE user_id = :uid AND reading_date >= DATE_SUB(:today, INTERVAL 6 DAY)
+            UNION
+            SELECT log_date AS d FROM food_logs WHERE user_id = :uid AND log_date >= DATE_SUB(:today, INTERVAL 6 DAY)
+        ) t"
+    );
+    $wStmt->execute([":uid" => $userId, ":today" => $today]);
+    $weeklyDays = (int) $wStmt->fetchColumn();
+
+    $weeklyProgressVal = "{$weeklyDays}/7 Days";
+    $weeklyProgressSub = ($weeklyDays > 0) ? "Glucose & Diet Logged" : "No logs this week";
+    $weeklyProgressStatus = ($weeklyDays >= 5) ? "Great Routine" : (($weeklyDays > 0) ? "Keep Logging" : "Start logging today");
+    $weeklyProgressBg = ($weeklyDays > 0) ? "#E3F2FD" : "#F3F4F6";
+    $weeklyProgressColor = ($weeklyDays > 0) ? "#1565C0" : "#6B7280";
 
     // Format greeting
     $hour = (int) date("H");
     $timeGreeting = ($hour < 12) ? "Good morning" : (($hour < 17) ? "Good afternoon" : "Good evening");
 
     // Dynamic AI tip based on glucose value & diet
-    $tipText = "A 10-minute light walk after meals helps smooth out blood sugar levels effectively!";
-    if ($glucoseVal > 180) {
-        $tipText = "Glucose is elevated. Drink water and take a gentle 15-minute walk to help insulin sensitivity.";
-    } elseif ($glucoseVal < 70) {
-        $tipText = "Glucose is low! Have 15g fast-acting carbs (half cup fruit juice) and re-test in 15 mins.";
-    } elseif ($totalCarbs > 200) {
-        $tipText = "Carb intake is high today. Consider balanced fiber-rich vegetables for your next meal.";
+    $tipText = "Welcome to DiaWell! Start by logging your first blood glucose reading or meal.";
+    if ($glucoseVal !== null) {
+        if ($glucoseVal > 180) {
+            $tipText = "Glucose is elevated. Drink water and take a gentle 15-minute walk to help insulin sensitivity.";
+        } elseif ($glucoseVal < 70) {
+            $tipText = "Glucose is low! Have 15g fast-acting carbs (half cup fruit juice) and re-test in 15 mins.";
+        } elseif ($totalCarbs > 200) {
+            $tipText = "Carb intake is high today. Consider balanced fiber-rich vegetables for your next meal.";
+        } else {
+            $tipText = "A 10-minute light walk after meals helps smooth out blood sugar levels effectively!";
+        }
     }
 
     // Daily routine check
@@ -197,14 +239,21 @@ try {
 
     $doneCount = ($breakfastDone ? 1 : 0) + ($glucoseDone ? 1 : 0) + ($lunchDone ? 1 : 0) + ($dinnerMedsDone ? 1 : 0);
     $adherencePercent = round(($doneCount / 4) * 100);
-    $wellnessSubtitle = "Daily Wellness • {$adherencePercent}% On Track";
+    $wellnessSubtitle = ($doneCount > 0) ? "Daily Wellness • {$adherencePercent}% On Track" : "Daily Wellness • Start your day";
+
+    // Nutrition values
+    $nutrValue = ($totalCal > 0) ? number_format($totalCal) . " kcal" : "0 kcal";
+    $nutrSubtitle = ($mealCount > 0) ? "{$mealCount} meals logged" : "0 meals logged today";
+    $nutrStatusText = ($totalCarbs > 0 || $totalProtein > 0) ? "C:{$totalCarbs}g • P:{$totalProtein}g" : "No meals logged";
+    $nutrStatusBg = ($mealCount > 0) ? "#E8F5E9" : "#F3F4F6";
+    $nutrStatusColor = ($mealCount > 0) ? "#2E7D32" : "#6B7280";
 
     respond(true, "Dashboard data retrieved successfully.", 200, [
         "user_id" => (int) $user["id"],
         "greeting" => "{$timeGreeting}, {$user["full_name"]} 👋",
         "wellness_subtitle" => $wellnessSubtitle,
-        "streak_badge" => "🔥 {$streakDays} Day Logging Streak",
-        "target_badge" => "🎯 Fasting Target Met",
+        "streak_badge" => $streakBadge,
+        "target_badge" => $targetBadge,
         "ai_tip" => [
             "title" => "Dr. JARVIS Tip Of The Day ⚡",
             "tip" => $tipText
@@ -218,20 +267,20 @@ try {
         "metrics" => [
             "glucose" => [
                 "title" => "Glucose",
-                "value" => round($glucoseVal) . " mg/dL",
-                "value_num" => $glucoseVal,
+                "value" => $glucoseValStr,
+                "value_num" => $glucoseValNum,
                 "subtitle" => $glucoseTime,
                 "status_text" => $glucoseStatus,
-                "status_bg" => ($glucoseStatus === "In Target Range") ? "#E8F5E9" : "#FFF3E0",
-                "status_color" => ($glucoseStatus === "In Target Range") ? "#2E7D32" : "#E65100"
+                "status_bg" => $glucoseStatusBg,
+                "status_color" => $glucoseStatusColor
             ],
             "nutrition" => [
                 "title" => "Nutrition",
-                "value" => ($totalCal > 0 ? number_format($totalCal) : "1,450") . " kcal",
-                "subtitle" => ($mealCount > 0 ? "{$mealCount} meals logged" : "3 of 4 meals logged"),
-                "status_text" => ($totalCarbs > 0 ? "C:{$totalCarbs}g • P:{$totalProtein}g" : "C:160g • P:75g"),
-                "status_bg" => "#E8F5E9",
-                "status_color" => "#2E7D32"
+                "value" => $nutrValue,
+                "subtitle" => $nutrSubtitle,
+                "status_text" => $nutrStatusText,
+                "status_bg" => $nutrStatusBg,
+                "status_color" => $nutrStatusColor
             ],
             "medication" => [
                 "title" => "Medication",
@@ -243,9 +292,14 @@ try {
             ],
             "weekly_progress" => [
                 "title" => "Weekly Report",
-                "value" => "7/7 Days",
-                "subtitle" => "Glucose & Diet Logged",
-                "status_text" => "Excellent Routine",
+                "value" => $weeklyProgressVal,
+                "subtitle" => $weeklyProgressSub,
+                "status_text" => $weeklyProgressStatus,
+                "status_bg" => $weeklyProgressBg,
+                "status_color" => $weeklyProgressColor
+            ]
+        ]
+    ]);
                 "status_bg" => "#E3F2FD",
                 "status_color" => "#1565C0"
             ]
