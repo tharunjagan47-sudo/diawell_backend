@@ -16,7 +16,8 @@ $today = date("Y-m-d");
 try {
     // 1. User profile
     $userStmt = $pdo->prepare(
-        "SELECT id, full_name, email, diabetes_type, current_glucose_mg_dl, target_glucose_mg_dl, profile_photo 
+        "SELECT id, full_name, email, diabetes_type, current_glucose_mg_dl, target_glucose_mg_dl, 
+                target_fasting_glucose, target_postmeal_glucose, profile_photo 
          FROM users 
          WHERE id = :id 
          LIMIT 1"
@@ -41,7 +42,9 @@ try {
     $gStmt->execute([":user_id" => $userId]);
     $latestGlucose = $gStmt->fetch();
 
-    $targetVal = (float) ($user["target_glucose_mg_dl"] ?? 120.0);
+    $targetFast = isset($user["target_fasting_glucose"]) && $user["target_fasting_glucose"] ? (float)$user["target_fasting_glucose"] : (float)($user["target_glucose_mg_dl"] ?? 100.0);
+    $targetPost = isset($user["target_postmeal_glucose"]) && $user["target_postmeal_glucose"] ? (float)$user["target_postmeal_glucose"] : 140.0;
+    $targetVal = $targetFast;
 
     if ($latestGlucose) {
         $glucoseVal = (float) $latestGlucose["glucose_value"];
@@ -51,7 +54,7 @@ try {
         $glucoseValNum = $glucoseVal;
         $glucoseStatusBg = ($glucoseStatus === "In Target Range") ? "#E8F5E9" : "#FFF3E0";
         $glucoseStatusColor = ($glucoseStatus === "In Target Range") ? "#2E7D32" : "#E65100";
-        $targetBadge = ($glucoseStatus === "In Target Range") ? "🎯 Fasting Target Met" : "⚠️ Target: " . round($targetVal) . " mg/dL";
+        $targetBadge = ($glucoseStatus === "In Target Range") ? "🎯 Target: " . round($targetVal) . " mg/dL (Met)" : "🎯 Target: " . round($targetVal) . " mg/dL";
     } else {
         $glucoseVal = null;
         $glucoseStatus = "No Readings Logged";
@@ -154,12 +157,20 @@ try {
         }
     }
 
-    // 5. Calculate 7-day logging streak (real calculation, 0 when no logs)
+    // 5. Calculate logging streak (consecutive days with glucose, meals, or activity)
     $streakDays = 0;
-    for ($i = 0; $i < 7; $i++) {
+    for ($i = 0; $i < 30; $i++) {
         $checkDate = date("Y-m-d", strtotime("-{$i} days"));
-        $sStmt = $pdo->prepare("SELECT id FROM glucose_readings WHERE user_id = :user_id AND reading_date = :d LIMIT 1");
-        $sStmt->execute([":user_id" => $userId, ":d" => $checkDate]);
+        $sStmt = $pdo->prepare(
+            "SELECT 1 FROM (
+                SELECT reading_date AS d FROM glucose_readings WHERE user_id = :uid AND reading_date = :d
+                UNION
+                SELECT log_date AS d FROM food_logs WHERE user_id = :uid AND log_date = :d
+                UNION
+                SELECT activity_date AS d FROM activity_logs WHERE user_id = :uid AND activity_date = :d
+            ) t LIMIT 1"
+        );
+        $sStmt->execute([":uid" => $userId, ":d" => $checkDate]);
         if ($sStmt->fetch()) {
             $streakDays++;
         } else {
@@ -286,6 +297,9 @@ try {
         "wellness_subtitle" => $wellnessSubtitle,
         "streak_badge" => $streakBadge,
         "target_badge" => $targetBadge,
+        "streak_days" => (int) $streakDays,
+        "target_fasting_glucose" => (int) $targetFast,
+        "target_postmeal_glucose" => (int) $targetPost,
         "ai_tip" => [
             "title" => "Dr. JARVIS Tip Of The Day ⚡",
             "tip" => $tipText
