@@ -79,6 +79,23 @@ if ($method === "GET") {
 // ==========================================
 if ($method === "POST") {
     if (!isset($_FILES["profile_photo"])) {
+    // Detect file uploaded under any standard key: 'profile_photo', 'photo', 'image', 'file', etc.
+    $file = null;
+    $candidateKeys = ["profile_photo", "photo", "image", "file", "avatar", "picture"];
+    foreach ($candidateKeys as $k) {
+        if (isset($_FILES[$k]) && is_array($_FILES[$k]) && !empty($_FILES[$k]["tmp_name"])) {
+            $file = $_FILES[$k];
+            break;
+        }
+    }
+    if (!$file && !empty($_FILES)) {
+        $first = reset($_FILES);
+        if (is_array($first) && !empty($first["tmp_name"])) {
+            $file = $first;
+        }
+    }
+
+    if (!$file) {
         respond(false, "Please select an image file using multipart/form-data key 'profile_photo'.", 400);
     }
 
@@ -91,6 +108,9 @@ if ($method === "POST") {
     // Maximum file size: 5 MB
     if ($file["size"] > 5 * 1024 * 1024) {
         respond(false, "Profile photo size must be smaller than 5 MB.", 400);
+    // Maximum file size: 10 MB
+    if ($file["size"] > 10 * 1024 * 1024) {
+        respond(false, "Profile photo size must be smaller than 10 MB.", 400);
     }
 
     // Verify MIME type using FileInfo
@@ -105,6 +125,24 @@ if ($method === "POST") {
 
     if (!isset($allowedMimes[$mime]) || @getimagesize($file["tmp_name"]) === false) {
         respond(false, "Only JPG, PNG, and WEBP images are allowed.", 400);
+    $extension = "jpg";
+    $imageInfo = @getimagesize($file["tmp_name"]);
+    if ($imageInfo !== false && !empty($imageInfo["mime"])) {
+        $mime = strtolower($imageInfo["mime"]);
+        if (strpos($mime, "png") !== false) {
+            $extension = "png";
+        } elseif (strpos($mime, "webp") !== false) {
+            $extension = "webp";
+        } else {
+            $extension = "jpg";
+        }
+    } else {
+        $ext = strtolower(pathinfo($file["name"] ?? "", PATHINFO_EXTENSION));
+        if (in_array($ext, ["jpg", "jpeg", "png", "webp"])) {
+            $extension = ($ext === "jpeg") ? "jpg" : $ext;
+        } else {
+            respond(false, "Only JPG, PNG, and WEBP images are allowed.", 400);
+        }
     }
 
     $uploadDir = __DIR__ . "/../upload/profile_photos/";
@@ -131,6 +169,9 @@ if ($method === "POST") {
         // Move uploaded file
         if (!move_uploaded_file($file["tmp_name"], $destination)) {
             respond(false, "Failed to save uploaded image on the server.", 500);
+            if (!copy($file["tmp_name"], $destination)) {
+                respond(false, "Failed to save uploaded image on the server.", 500);
+            }
         }
 
         $newPhotoSaved = true;
@@ -154,9 +195,12 @@ if ($method === "POST") {
         }
 
         $photoFullUrl = "http://" . $_SERVER["HTTP_HOST"] . "/DiaWell_backend/" . $photoRelPath;
+        $host = $_SERVER["HTTP_HOST"] ?? "127.0.0.1";
+        $photoFullUrl = "http://" . $host . "/DiaWell_backend/" . $photoRelPath;
 
         respond(true, "Profile photo uploaded successfully.", 200, [
             "user_id" => $userId,
+            "user_id" => (int) $userId,
             "profile_photo" => $photoRelPath,
             "profile_photo_url" => $photoFullUrl
         ]);
@@ -167,6 +211,7 @@ if ($method === "POST") {
         }
         error_log("Photo upload error: " . $e->getMessage());
         respond(false, "Failed to upload photo due to server error.", 500);
+        respond(false, "Failed to upload photo due to server error: " . $e->getMessage(), 500);
     }
 }
 

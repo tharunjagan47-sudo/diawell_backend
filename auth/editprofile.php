@@ -15,14 +15,7 @@ if ($method === "GET") {
     }
 
     try {
-        $stmt = $pdo->prepare(
-            "SELECT id, full_name, email, phone, gender, diabetes_type, age, height_cm, weight_kg, 
-                    profile_photo, current_glucose_mg_dl, target_glucose_mg_dl,
-                    target_fasting_glucose, target_postmeal_glucose, created_at 
-             FROM users 
-             WHERE id = :id 
-             LIMIT 1"
-        );
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = :id LIMIT 1");
         $stmt->execute([":id" => $userId]);
         $user = $stmt->fetch();
 
@@ -32,7 +25,8 @@ if ($method === "GET") {
 
         $photoUrl = null;
         if (!empty($user["profile_photo"])) {
-            $photoUrl = "http://" . $_SERVER["HTTP_HOST"] . "/DiaWell_backend/" . ltrim($user["profile_photo"], "/");
+            $host = $_SERVER["HTTP_HOST"] ?? "127.0.0.1";
+            $photoUrl = "http://" . $host . "/DiaWell_backend/" . ltrim($user["profile_photo"], "/");
         }
 
         respond(true, "Profile details retrieved successfully.", 200, [
@@ -45,15 +39,15 @@ if ($method === "GET") {
             "age" => $user["age"] !== null ? (int) $user["age"] : null,
             "height_cm" => $user["height_cm"] !== null ? (float) $user["height_cm"] : null,
             "weight_kg" => $user["weight_kg"] !== null ? (float) $user["weight_kg"] : null,
-            "target_fasting_glucose" => $user["target_fasting_glucose"] !== null ? (int) $user["target_fasting_glucose"] : 100,
-            "target_postmeal_glucose" => $user["target_postmeal_glucose"] !== null ? (int) $user["target_postmeal_glucose"] : 140,
-            "profile_photo" => $user["profile_photo"],
+            "target_fasting_glucose" => isset($user["target_fasting_glucose"]) && $user["target_fasting_glucose"] !== null ? (int) $user["target_fasting_glucose"] : 100,
+            "target_postmeal_glucose" => isset($user["target_postmeal_glucose"]) && $user["target_postmeal_glucose"] !== null ? (int) $user["target_postmeal_glucose"] : 140,
+            "profile_photo" => $user["profile_photo"] ?? null,
             "profile_photo_url" => $photoUrl
         ]);
 
-    } catch (PDOException $e) {
+    } catch (Throwable $e) {
         error_log("Edit profile GET error: " . $e->getMessage());
-        respond(false, "Database error retrieving profile details.", 500);
+        respond(false, "Database error retrieving profile details: " . $e->getMessage(), 500);
     }
 }
 
@@ -121,39 +115,43 @@ if ($method === "POST" || $method === "PUT") {
         $updatedTargetFasting = ($targetFasting !== null) ? (int) $targetFasting : ($currentUser["target_fasting_glucose"] ?? 100);
         $updatedTargetPostmeal = ($targetPostmeal !== null) ? (int) $targetPostmeal : ($currentUser["target_postmeal_glucose"] ?? 140);
 
-        // Update database
-        $update = $pdo->prepare(
-            "UPDATE users SET
-                full_name = :full_name,
-                email = :email,
-                phone = :phone,
-                gender = :gender,
-                diabetes_type = :diabetes_type,
-                age = :age,
-                height_cm = :height_cm,
-                weight_kg = :weight_kg,
-                target_fasting_glucose = :target_fasting,
-                target_postmeal_glucose = :target_postmeal
-             WHERE id = :id"
-        );
+        // Dynamically update available columns in users table
+        $columnsStmt = $pdo->query("SHOW COLUMNS FROM users");
+        $existingCols = $columnsStmt->fetchAll(PDO::FETCH_COLUMN);
 
-        $update->execute([
-            ":full_name" => $updatedName,
-            ":email" => $updatedEmail,
-            ":phone" => $updatedPhone,
-            ":gender" => $updatedGender,
-            ":diabetes_type" => $updatedDiabetes,
-            ":age" => $updatedAge,
-            ":height_cm" => $updatedHeight,
-            ":weight_kg" => $updatedWeight,
-            ":target_fasting" => $updatedTargetFasting,
-            ":target_postmeal" => $updatedTargetPostmeal,
-            ":id" => $userId
-        ]);
+        $fields = [];
+        $params = [":id" => $userId];
+
+        $colMap = [
+            "full_name" => $updatedName,
+            "email" => $updatedEmail,
+            "phone" => $updatedPhone,
+            "gender" => $updatedGender,
+            "diabetes_type" => $updatedDiabetes,
+            "age" => $updatedAge,
+            "height_cm" => $updatedHeight,
+            "weight_kg" => $updatedWeight,
+            "target_fasting_glucose" => $updatedTargetFasting,
+            "target_postmeal_glucose" => $updatedTargetPostmeal
+        ];
+
+        foreach ($colMap as $col => $val) {
+            if (in_array($col, $existingCols)) {
+                $fields[] = "$col = :$col";
+                $params[":$col"] = $val;
+            }
+        }
+
+        if (!empty($fields)) {
+            $sql = "UPDATE users SET " . implode(", ", $fields) . " WHERE id = :id";
+            $update = $pdo->prepare($sql);
+            $update->execute($params);
+        }
 
         $photoUrl = null;
         if (!empty($currentUser["profile_photo"])) {
-            $photoUrl = "http://" . $_SERVER["HTTP_HOST"] . "/DiaWell_backend/" . ltrim($currentUser["profile_photo"], "/");
+            $host = $_SERVER["HTTP_HOST"] ?? "127.0.0.1";
+            $photoUrl = "http://" . $host . "/DiaWell_backend/" . ltrim($currentUser["profile_photo"], "/");
         }
 
         respond(true, "Profile updated successfully.", 200, [
@@ -172,9 +170,9 @@ if ($method === "POST" || $method === "PUT") {
             "profile_photo_url" => $photoUrl
         ]);
 
-    } catch (PDOException $e) {
+    } catch (Throwable $e) {
         error_log("Edit profile update error: " . $e->getMessage());
-        respond(false, "Database error updating profile details.", 500);
+        respond(false, "Database error updating profile details: " . $e->getMessage(), 500);
     }
 }
 
