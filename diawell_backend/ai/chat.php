@@ -4,18 +4,22 @@ header("Access-Control-Allow-Methods: GET, POST, OPTIONS, DELETE");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-User-Id");
 header("Content-Type: application/json; charset=UTF-8");
 
-if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
+if (($_SERVER["REQUEST_METHOD"] ?? "") === "OPTIONS") {
     http_response_code(200);
     exit;
 }
 
 $rawInput = file_get_contents("php://input");
+if (empty($rawInput)) {
+    $rawInput = @file_get_contents("php://stdin");
+}
 $data = json_decode($rawInput, true) ?: [];
 
 // Extract user message across all common parameter names
 $userMessage = trim($data["message"] ?? $data["prompt"] ?? $data["query"] ?? $_POST["message"] ?? $_POST["prompt"] ?? $_GET["message"] ?? "");
 $userId = intval($data["user_id"] ?? $_POST["user_id"] ?? $_GET["user_id"] ?? $_SERVER["HTTP_X_USER_ID"] ?? 0);
 $clientContext = is_array($data["patient_context"] ?? null) ? $data["patient_context"] : [];
+$history = is_array($data["history"] ?? null) ? $data["history"] : [];
 
 if (empty($userMessage)) {
     http_response_code(200);
@@ -58,7 +62,7 @@ $cleanAlpha = trim(preg_replace('/\s+/', ' ', $cleanAlpha));
 if (preg_match('/^(hi|hello|hey|hai|vanakkam|good\s*(morning|afternoon|evening)|halo|dr\s*jarvis|jarvis)($|\s)/i', $cleanAlpha) && strlen($cleanAlpha) < 25) {
     $patientGreetingName = !empty($clientContext["patient_name"]) ? $clientContext["patient_name"] : "";
     $namePart = $patientGreetingName ? " {$patientGreetingName}" : "";
-    outputResponse("Hello{$namePart}! I am Dr. Jarvis, your DiaWell diabetes wellness companion. How can I assist you with your blood sugar, medications, diet, or workout today?");
+    outputResponse("Hello{$namePart}! I am Dr. Jarvis, your DiaWell diabetes wellness companion. How can I assist you with your blood sugar, medications, diet, or hospital guidance today?");
     exit;
 }
 
@@ -73,17 +77,20 @@ if (preg_match('/^(bye|goodbye|see\s*you|tata|good\s*night)($|\s)/i', $cleanAlph
 }
 
 // 2. Fetch Live MySQL Records & Merge with client patient_context
-$dbConfigPath = file_exists(__DIR__ . '/../config/db.php') 
-    ? __DIR__ . '/../config/db.php' 
-    : __DIR__ . '/../../config/db.php';
-
 $pdo = null;
-if (file_exists($dbConfigPath)) {
-    try {
-        require_once $dbConfigPath;
-    } catch (\Throwable $t) {
-        $pdo = null;
-    }
+try {
+    $pdo = new PDO(
+        "mysql:host=localhost;dbname=diawell;charset=utf8mb4",
+        "root",
+        "",
+        [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_TIMEOUT => 2
+        ]
+    );
+} catch (\Throwable $t) {
+    $pdo = null;
 }
 
 $userRow = null;
@@ -223,8 +230,123 @@ if (!empty($clientContext["food_preferences"])) {
     $foodPrefStr = "Diet: Balanced | Allergies: None | Avoid: None";
 }
 
+// Conversation History Context extraction
+$lastAssistantTurn = "";
+$lastUserTurn = "";
+if (!empty($history) && is_array($history)) {
+    for ($i = count($history) - 1; $i >= 0; $i--) {
+        $turn = $history[$i];
+        $role = strtolower($turn["role"] ?? "");
+        $content = strtolower($turn["content"] ?? "");
+        if (empty($lastAssistantTurn) && ($role === "assistant" || $role === "ai")) {
+            $lastAssistantTurn = $content;
+        }
+        if (empty($lastUserTurn) && $role === "user") {
+            $lastUserTurn = $content;
+        }
+    }
+}
+
 // =========================================================================
-// 3. INSTANT PERSONAL HEALTH DATA INTENTS (0.01s Execution)
+// 3. VERIFIED CHENNAI HOSPITAL & SPECIALIST ROUTING (Zero Hallucinations)
+// =========================================================================
+$isHospitalQuery = preg_match('/\b(hospital|hospitals|clinic|clinics|doctor|doctors|specialist|specialists|diabetologist|diabetologists|chennai|saveetha|simats|mohan|apollo|mv\s*hospital|maruthuvamanai)\b/i', $userMessage);
+
+if ($isHospitalQuery) {
+    if (strpos($lowerMsg, "anna nagar") !== false) {
+        outputResponse("In Anna Nagar, **Dr. Mohan's Diabetes Specialities Centre** (Plot No. 1221, 15th Main Rd, Anna Nagar West) and **Apollo Sugar Clinic** are the top verified choices for diabetes care.");
+        exit;
+    }
+    if (strpos($lowerMsg, "royapuram") !== false || strpos($lowerMsg, "foot") !== false || strpos($lowerMsg, "wound") !== false || strpos($lowerMsg, "ulcer") !== false) {
+        outputResponse("**M.V. Hospital for Diabetes** in Royapuram is internationally renowned for diabetic foot care, wound management, and limb salvage. Contact: 044-25954913.");
+        exit;
+    }
+    if (strpos($lowerMsg, "saveetha") !== false || strpos($lowerMsg, "simats") !== false || strpos($lowerMsg, "thandalam") !== false || strpos($lowerMsg, "poonamallee") !== false) {
+        outputResponse("**Saveetha Medical College Hospital (SIMATS)** in Thandalam offers comprehensive 24/7 diabetes super-speciality care, ICU, and affordable clinical consultations. Contact: 044-66726620.");
+        exit;
+    }
+    if (strpos($lowerMsg, "contact") !== false || strpos($lowerMsg, "number") !== false || strpos($lowerMsg, "phone") !== false || strpos($lowerMsg, "call") !== false || strpos($lowerMsg, "emergency") !== false) {
+        outputResponse("Verified Chennai Medical Contacts:\n• Emergency: **108**\n• Dr. Mohan's Diabetes: **044-43968888**\n• Saveetha Hospital (SIMATS): **044-66726620**\n• M.V. Hospital: **044-25954913**\n• Apollo Sugar: **1800-103-4460**");
+        exit;
+    }
+
+    // Default top verified Chennai diabetes centres
+    outputResponse("Top verified diabetes centres in Chennai:\n" .
+                   "• **Dr. Mohan's Diabetes Specialities Centre** (Gopalapuram, Anna Nagar, Velachery - 044-43968888)\n" .
+                   "• **Saveetha Medical College Hospital (SIMATS)** (Thandalam - 044-66726620)\n" .
+                   "• **M.V. Hospital for Diabetes** (Royapuram - 044-25954913, Foot care specialist)\n" .
+                   "• **Apollo Sugar Clinics** (Greams Road, OMR - 1800-103-4460)\n" .
+                   "For medical emergencies, dial **108**.");
+    exit;
+}
+
+// Multi-turn hospital follow-up handling
+$wasHospitalContext = strpos($lastAssistantTurn, "hospital") !== false || strpos($lastAssistantTurn, "centre") !== false ||
+                      strpos($lastAssistantTurn, "clinic") !== false || strpos($lastAssistantTurn, "chennai") !== false ||
+                      strpos($lastAssistantTurn, "dr. mohan") !== false || strpos($lastUserTurn, "hospital") !== false;
+
+if ($wasHospitalContext) {
+    if (strpos($lowerMsg, "anna nagar") !== false || strpos($lowerMsg, "near me") !== false || strpos($lowerMsg, "which one is near") !== false) {
+        outputResponse("In Anna Nagar, **Dr. Mohan's Diabetes Specialities Centre** (15th Main Rd, Anna Nagar West) and **Apollo Sugar Clinic** are the closest top options.");
+        exit;
+    }
+    if (strpos($lowerMsg, "royapuram") !== false || strpos($lowerMsg, "foot") !== false || strpos($lowerMsg, "wound") !== false) {
+        outputResponse("For diabetic foot care or North Chennai, visit **M.V. Hospital for Diabetes** (Royapuram). Contact: 044-25954913.");
+        exit;
+    }
+    if (strpos($lowerMsg, "number") !== false || strpos($lowerMsg, "phone") !== false || strpos($lowerMsg, "contact") !== false || strpos($lowerMsg, "call") !== false) {
+        outputResponse("Key Chennai Contacts:\n• Dr. Mohan's: 044-43968888\n• Saveetha Hospital: 044-66726620\n• M.V. Hospital: 044-25954913\n• Emergency: 108");
+        exit;
+    }
+    if (strpos($lowerMsg, "eye") !== false || strpos($lowerMsg, "retina") !== false || strpos($lowerMsg, "vision") !== false) {
+        outputResponse("For diabetic retinopathy and eye checks, visit **Dr. Mohan's Retinopathy Dept** (Gopalapuram / Anna Nagar) or **Sankara Nethralaya** (College Road).");
+        exit;
+    }
+}
+
+// Multi-turn diet follow-up handling
+$wasDietContext = strpos($lastAssistantTurn, "diet") !== false || strpos($lastAssistantTurn, "food") !== false ||
+                  strpos($lastAssistantTurn, "calories") !== false || strpos($lastUserTurn, "diet") !== false;
+
+if ($wasDietContext || strpos($lowerMsg, "dinner") !== false || strpos($lowerMsg, "lunch") !== false || strpos($lowerMsg, "breakfast") !== false) {
+    if (strpos($lowerMsg, "dinner") !== false || strpos($lowerMsg, "night") !== false || strpos($lowerMsg, "rathiri") !== false) {
+        outputResponse("For dinner, choose low-glycemic, light options: 2 methi or multigrain rotis with dal and cucumber salad, or grilled paneer with sautéed veggies. Avoid heavy white rice at night.");
+        exit;
+    }
+    if (strpos($lowerMsg, "lunch") !== false || strpos($lowerMsg, "afternoon") !== false || strpos($lowerMsg, "madhiyam") !== false) {
+        outputResponse("For lunch, balance your plate with 50% green vegetables or poriyal, 1 cup of brown rice or foxtail millet, and a generous bowl of dal or sambar.");
+        exit;
+    }
+    if (strpos($lowerMsg, "breakfast") !== false || strpos($lowerMsg, "morning") !== false || strpos($lowerMsg, "kalai") !== false) {
+        outputResponse("For breakfast, opt for high-protein options: sprouted moong salad, vegetable oats upma, or 2 ragi dosas with mint chutney. Avoid sweetened tea or coffee.");
+        exit;
+    }
+}
+
+// Multi-turn glucose follow-up handling ("is that normal?", "is that bad?")
+$wasSugarContext = strpos($lastAssistantTurn, "glucose") !== false || strpos($lastAssistantTurn, "blood sugar") !== false ||
+                   strpos($lastUserTurn, "glucose") !== false || strpos($lastUserTurn, "sugar") !== false;
+
+if ($wasSugarContext && (strpos($lowerMsg, "normal") !== false || strpos($lowerMsg, "good") !== false || strpos($lowerMsg, "bad") !== false || strpos($lowerMsg, "high") !== false)) {
+    if ($latestGlucoseVal !== null) {
+        $num = $latestGlucoseVal;
+        if ($num < 70) {
+            outputResponse("⚠️ At {$num} mg/dL, your blood sugar is low (hypoglycemia). Consume 15g fast-acting carbs immediately and re-test in 15 minutes.");
+        } elseif ($num <= 130) {
+            outputResponse("✅ Yes, {$num} mg/dL is within the target fasting range (80-130 mg/dL). Excellent control!");
+        } elseif ($num <= 180) {
+            outputResponse("📊 {$num} mg/dL is acceptable if measured 1-2 hours after a meal (target <180 mg/dL). Take a gentle 15-minute walk.");
+        } else {
+            outputResponse("⚠️ At {$num} mg/dL, it is elevated (target <130 fasting, <180 post-meal). Drink plenty of water and minimize refined carbs.");
+        }
+    } else {
+        outputResponse("Recommended target ranges are 80-130 mg/dL for fasting and under 180 mg/dL post-meal. Log your reading to see how you are doing!");
+    }
+    exit;
+}
+
+// =========================================================================
+// 4. INSTANT PERSONAL HEALTH DATA INTENTS (0.01s Execution)
 // =========================================================================
 
 // INTENT A: Blood Sugar / Glucose / HbA1c
@@ -232,25 +354,23 @@ if (preg_match('/\b(my\s*(glucose|sugar|blood\s*sugar|reading|readings|level|lev
     if ($latestGlucoseStr !== "No readings logged yet" && $latestGlucoseVal !== null) {
         $num = $latestGlucoseVal;
         if ($num < 70) {
-            $interp = "⚠️ **Low Blood Glucose (Hypoglycemia):** Blood sugar is critically below 70 mg/dL. Take 15g of fast-acting carbs (e.g., fruit juice, 3 glucose tablets, or a tablespoon of sugar in water) immediately and re-test in 15 minutes.";
+            $interp = "⚠️ Low (<70 mg/dL). Take 15g fast carbs immediately.";
         } elseif ($num <= 130) {
-            $interp = "🎯 **In Target Range:** Excellent glucose control! Your reading is aligned with recommended fasting diabetes targets (80-130 mg/dL). Keep adhering to your nutrition and activity routine.";
+            $interp = "🎯 In target fasting range (80-130 mg/dL).";
         } elseif ($num <= 180) {
-            $interp = "📊 **Mildly Elevated (Post-Meal Range):** Normal if taken within 1 to 2 hours after a meal. Stay well hydrated and consider a gentle 15-minute walk to help insulin clear glucose into muscles.";
+            $interp = "📊 Post-meal range (target <180 mg/dL). Normal if tested after food.";
         } else {
-            $interp = "⚠️ **Elevated Glucose (Hyperglycemia):** Your reading is above 180 mg/dL. Drink ample plain water, avoid high-glycemic carbohydrates or sugary foods, and engage in light walking if feeling well.";
+            $interp = "⚠️ Elevated (>180 mg/dL). Drink water and take a light walk.";
         }
 
         $avgDisplay = $avgGlucose ? "{$avgGlucose} mg/dL" : round($num) . " mg/dL";
         $a1cDisplay = $eA1c ? "{$eA1c}%" : round(($num + 46.7) / 28.7, 1) . "%";
 
-        $reply = "Hello {$patientName}, based on your DiaWell logs:\n\n" .
-                 "• **Latest Blood Glucose:** {$latestGlucoseStr}\n" .
-                 "• **Average Glucose:** {$avgDisplay}\n" .
-                 "• **Estimated HbA1c (eA1c):** {$a1cDisplay}\n" .
-                 "• **Clinical Status:** {$interp}";
+        $reply = "• Latest Blood Glucose: {$latestGlucoseStr}\n" .
+                 "• Average Glucose: {$avgDisplay} | eA1c: {$a1cDisplay}\n" .
+                 "• Status: {$interp}";
     } else {
-        $reply = "You haven't logged any blood glucose readings yet today, {$patientName}. You can log one right now on the Glucose screen or just say **'Log my blood sugar 130'** and I will record it for you!";
+        $reply = "You haven't logged any blood glucose readings yet today, {$patientName}. Log one on the Glucose screen or say **'Log my blood sugar 125'**.";
     }
     outputResponse($reply);
     exit;
@@ -259,11 +379,9 @@ if (preg_match('/\b(my\s*(glucose|sugar|blood\s*sugar|reading|readings|level|lev
 // INTENT B: Medications / Tablets / Prescriptions
 if (preg_match('/\b(my\s*(medication|medications|medicine|medicines|tablet|tablets|pills?|dose|doses|prescription|prescriptions)|what\s*(medication|medications|medicine|medicines|tablet|tablets|pill|pills)|what\s*(am\s*i\s*taking|do\s*i\s*take)|en\s*(tablet|marundhu)|next\s*dose|medication\s*schedule|what\s*(are|is)\s*my\s*(medicine|medication|tablet|tablets|pills))\b/i', $userMessage)) {
     if ($activeMedsStr !== "No active medications scheduled") {
-        $reply = "Hello {$patientName}, here are your scheduled DiaWell medications:\n\n" .
-                 "• **Active Prescriptions:** {$activeMedsStr}\n\n" .
-                 "⚡ **Doctor's Note:** Take all prescribed medications consistently with water. If taking Metformin, take it with or immediately after a meal to prevent stomach upset. Say **'Remind me to take [Medication] at [Time]'** anytime to add a new alarm!";
+        $reply = "Active Prescriptions for {$patientName}:\n• {$activeMedsStr}\n\nTake medications consistently with water after meals to prevent stomach upset.";
     } else {
-        $reply = "You have no active medications scheduled in your DiaWell routine, {$patientName}. Would you like me to set a reminder? Just say **'Remind me to take Metformin at 8 PM'** or tap the Medication tab!";
+        $reply = "You have no active medications scheduled in your DiaWell routine, {$patientName}. Say **'Remind me to take Metformin at 8 PM'** to set an alarm.";
     }
     outputResponse($reply);
     exit;
@@ -271,20 +389,17 @@ if (preg_match('/\b(my\s*(medication|medications|medicine|medicines|tablet|table
 
 // INTENT C: Diet / Calories / Water / Exercise / Today's Health Summary
 if (preg_match('/\b(my\s*(diet|calories|meals?|food|water|workout|activity|exercise|report|summary|health\s*today)|what\s*did\s*i\s*eat|how\s*am\s*i\s*doing|today\'?s?\s*(status|summary|health|report)|(how\s*much|how\s*many)\s*(water|calories|glasses)|summary\s*of\s*my\s*health)\b/i', $userMessage)) {
-    $reply = "Hello {$patientName}, here is your DiaWell health summary for today:\n\n" .
-             "• **Blood Glucose:** {$latestGlucoseStr}\n" .
-             "• **Active Medications:** {$activeMedsStr}\n" .
-             "• **Water Intake:** {$waterStr}\n" .
-             "• **Calories Consumed:** {$calInStr}\n" .
-             "• **Calories Burned:** {$calBurnedStr}\n" .
-             "• **Food Preferences:** {$foodPrefStr}\n\n" .
-             "⚡ **Doctor's Tip:** Maintain a balanced low-glycemic diet, drink water regularly, and aim for a 15-20 minute brisk walk after your largest meal to improve insulin sensitivity!";
+    $reply = "DiaWell Summary for {$patientName} today:\n" .
+             "• Glucose: {$latestGlucoseStr}\n" .
+             "• Medications: {$activeMedsStr}\n" .
+             "• Water: {$waterStr} | Calories In: {$calInStr} | Burned: {$calBurnedStr}\n" .
+             "Aim for a brisk 15-20 minute walk after your main meal to improve insulin sensitivity.";
     outputResponse($reply);
     exit;
 }
 
 // =========================================================================
-// 4. GENERAL MEDICAL / DIET QUESTIONS (Injected Personal Context to Ollama)
+// 5. GENERAL MEDICAL / DIET QUESTIONS (Multi-Turn Ollama Pipeline)
 // =========================================================================
 
 function normalizeTanglish(string $text): string {
@@ -311,11 +426,11 @@ function normalizeTanglish(string $text): string {
 
 $normalizedPrompt = normalizeTanglish($userMessage);
 
-// Personal Health Context Injected System Prompt
+// Personal Health Context Injected System Prompt: Enforce 2-3 lines, zero hallucinations
 $systemPrompt = "You are Dr. Jarvis, DiaWell's rapid AI Diabetes Specialist. " .
                 "Patient Profile: Name: {$patientName}, Latest Blood Sugar: {$latestGlucoseStr}, Food Preferences: {$foodPrefStr}, Active Meds: {$activeMedsStr}. " .
-                "Tailor your medical advice specifically to this patient's diabetes status and food allergies. " .
-                "Reply in 2-3 short, practical bullet points with Indian low-GI diet or exercise advice. Understand English and Tanglish.";
+                "Give direct, concise medical advice in 2-3 short sentences (or max 3 brief bullet points). Focus strictly on what was asked. " .
+                "Never write long essays or generic disclaimers. Never mention cities outside Chennai or Tamil Nadu. Understand English and Tanglish.";
 
 $ollamaUrl = "http://127.0.0.1:11434/api/chat";
 $model = "qwen2.5:0.5b";
@@ -323,17 +438,32 @@ $model = "qwen2.5:0.5b";
 $options = [
     "num_gpu" => 0,
     "num_ctx" => 512,
-    "num_predict" => 120,
-    "temperature" => 0.5
+    "num_predict" => 90,
+    "temperature" => 0.3
 ];
 
-function queryOllama(string $url, string $model, string $systemPrompt, string $userPrompt, array $options): ?string {
+// Build multi-turn messages array
+$messagesPayload = [
+    ["role" => "system", "content" => $systemPrompt]
+];
+
+if (!empty($history) && is_array($history)) {
+    $recentHistory = array_slice($history, -6);
+    foreach ($recentHistory as $turn) {
+        $turnRole = strtolower($turn["role"] ?? "");
+        $turnContent = trim($turn["content"] ?? "");
+        if (!empty($turnContent)) {
+            $cleanRole = ($turnRole === "assistant" || $turnRole === "ai") ? "assistant" : "user";
+            $messagesPayload[] = ["role" => $cleanRole, "content" => $turnContent];
+        }
+    }
+}
+$messagesPayload[] = ["role" => "user", "content" => $normalizedPrompt];
+
+function queryOllama(string $url, string $model, array $messages, array $options): ?string {
     $payload = json_encode([
         "model" => $model,
-        "messages" => [
-            ["role" => "system", "content" => $systemPrompt],
-            ["role" => "user", "content" => $userPrompt]
-        ],
+        "messages" => $messages,
         "stream" => false,
         "keep_alive" => "24h",
         "options" => $options
@@ -344,7 +474,7 @@ function queryOllama(string $url, string $model, string $systemPrompt, string $u
             "method" => "POST",
             "header" => "Content-Type: application/json\r\nAccept: application/json\r\nConnection: close\r\n",
             "content" => $payload,
-            "timeout" => 15,
+            "timeout" => 10,
             "ignore_errors" => true
         ]
     ];
@@ -366,7 +496,7 @@ function queryOllama(string $url, string $model, string $systemPrompt, string $u
             CURLOPT_POSTFIELDS => $payload,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
-            CURLOPT_TIMEOUT => 20,
+            CURLOPT_TIMEOUT => 12,
             CURLOPT_CONNECTTIMEOUT => 2
         ]);
         $curlResponse = curl_exec($ch);
@@ -385,25 +515,28 @@ function queryOllama(string $url, string $model, string $systemPrompt, string $u
     return null;
 }
 
-$aiReply = queryOllama($ollamaUrl, $model, $systemPrompt, $normalizedPrompt, $options);
+$aiReply = queryOllama($ollamaUrl, $model, $messagesPayload, $options);
+
+if (!empty($aiReply)) {
+    // Post-process to remove Chinese characters and hallucinated city names
+    $aiReply = preg_replace('/[\x{4e00}-\x{9fa5}]/u', '', $aiReply);
+    $aiReply = preg_replace('/\b(chuwati|guwahati|assam)\b/i', 'Chennai', $aiReply);
+    $aiReply = trim($aiReply);
+}
 
 if (empty($aiReply)) {
-    // Intelligent clinical fallback personalized to patient
+    // Intelligent clinical fallback personalized to patient (Concise: 2-3 lines max)
     $lowerPrompt = strtolower($userMessage);
     if (strpos($lowerPrompt, "diet") !== false || strpos($lowerPrompt, "eat") !== false || strpos($lowerPrompt, "food") !== false) {
-        $aiReply = "Hello {$patientName}, here are personalized dietary guidelines:\n" .
-                   "• Prioritize high-fiber, low-glycemic foods such as sprouted green gram, methi (fenugreek) roti, and sautéed vegetables.\n" .
-                   "• Minimize polished white rice, sweet snacks, and sugary drinks to prevent rapid post-meal spikes.\n" .
-                   "• Maintain balanced portions with adequate lean protein to steady insulin release.";
+        $aiReply = "Focus on low-glycemic, high-fiber foods: sprouted legumes, methi roti, green vegetables, and millets.\n" .
+                   "Minimize polished white rice and sweets to avoid rapid glucose spikes.\n" .
+                   "Ensure adequate lean protein (dal, paneer, eggs) with every meal.";
     } elseif (strpos($lowerPrompt, "walk") !== false || strpos($lowerPrompt, "exercise") !== false || strpos($lowerPrompt, "workout") !== false) {
-        $aiReply = "Hello {$patientName}, here is your tailored physical activity guidance:\n" .
-                   "• Aim for a brisk 15 to 30-minute walk after lunch or dinner; this directly stimulates muscle glucose uptake.\n" .
-                   "• Incorporate light bodyweight resistance or yoga 3 times a week to enhance insulin sensitivity.\n" .
-                   "• Carry a small source of fast carbs if engaging in extended aerobic exercise.";
+        $aiReply = "Aim for a brisk 15 to 30-minute walk after meals to stimulate skeletal muscle glucose uptake.\n" .
+                   "Add light resistance exercises or yoga 3 times a week to improve insulin sensitivity.";
     } else {
-        $aiReply = "Hello {$patientName}! I have reviewed your wellness query. " .
-                   "Based on your profile, maintain balanced low-GI nutrition, track your glucose regularly, and stay hydrated with water. " .
-                   "Feel free to ask me specifically about your glucose readings, medications, or meals anytime!";
+        $aiReply = "Hello {$patientName}! Maintain balanced low-glycemic nutrition, stay hydrated, and monitor your glucose regularly.\n" .
+                   "Ask me about your sugar readings, medications, or meals anytime!";
     }
 }
 
