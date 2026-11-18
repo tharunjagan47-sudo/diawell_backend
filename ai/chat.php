@@ -59,10 +59,17 @@ $lowerMsg = strtolower($userMessage);
 $cleanAlpha = preg_replace('/[^a-z\s]/', '', $lowerMsg);
 $cleanAlpha = trim(preg_replace('/\s+/', ' ', $cleanAlpha));
 
-if (preg_match('/^(hi|hello|hey|hai|vanakkam|good\s*(morning|afternoon|evening)|halo|dr\s*jarvis|jarvis)($|\s)/i', $cleanAlpha) && strlen($cleanAlpha) < 25) {
+if (preg_match('/^(hi|hello|hey|hai|vanakkam|good\s*(morning|afternoon|evening)|halo|diva|hey\s*diva)($|\s)/i', $cleanAlpha) && strlen($cleanAlpha) < 25) {
     $patientGreetingName = !empty($clientContext["patient_name"]) ? $clientContext["patient_name"] : "";
     $namePart = $patientGreetingName ? " {$patientGreetingName}" : "";
-    outputResponse("Hello{$namePart}! I am Dr. Jarvis, your DiaWell diabetes wellness companion. How can I assist you with your blood sugar, medications, diet, or hospital guidance today?");
+    outputResponse("Hello{$namePart}! I am DIVA (DiaWell Intelligent Virtual Assistant), your DiaWell diabetes wellness companion. How can I assist you with your blood sugar, medications, diet, or hospital guidance today?");
+    exit;
+}
+
+if (preg_match('/\b(who are you|what is your name|whats your name|your name|introduce yourself)\b/i', $cleanAlpha)) {
+    $patientGreetingName = !empty($clientContext["patient_name"]) ? $clientContext["patient_name"] : "";
+    $namePart = $patientGreetingName ? " {$patientGreetingName}" : "";
+    outputResponse("Hello{$namePart}! I am DIVA (DiaWell Intelligent Virtual Assistant), your personal AI diabetes care companion in DiaWell. I can help you track glucose, manage medications, plan meals, and answer diabetes questions.");
     exit;
 }
 
@@ -427,7 +434,8 @@ function normalizeTanglish(string $text): string {
 $normalizedPrompt = normalizeTanglish($userMessage);
 
 // Personal Health Context Injected System Prompt: Enforce 2-3 lines, zero hallucinations
-$systemPrompt = "You are Dr. Jarvis, DiaWell's rapid AI Diabetes Specialist. " .
+$systemPrompt = "You are DIVA (DiaWell Intelligent Virtual Assistant), DiaWell's rapid AI Diabetes Specialist. " .
+                "Always identify yourself as DIVA (DiaWell Intelligent Virtual Assistant) and never use any other assistant name. " .
                 "Patient Profile: Name: {$patientName}, Latest Blood Sugar: {$latestGlucoseStr}, Food Preferences: {$foodPrefStr}, Active Meds: {$activeMedsStr}. " .
                 "Give direct, concise medical advice in 2-3 short sentences (or max 3 brief bullet points). Focus strictly on what was asked. " .
                 "Never write long essays or generic disclaimers. Never mention cities outside Chennai or Tamil Nadu. Understand English and Tanglish.";

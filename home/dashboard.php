@@ -301,7 +301,7 @@ try {
         "target_fasting_glucose" => (int) $targetFast,
         "target_postmeal_glucose" => (int) $targetPost,
         "ai_tip" => [
-            "title" => "Dr. JARVIS Tip Of The Day ⚡",
+            "title" => "DIVA Tip Of The Day ⚡",
             "tip" => $tipText
         ],
         "routine" => $routineItems,
