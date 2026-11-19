@@ -597,40 +597,37 @@ try {
                 return $b["recommendation_score"] <=> $a["recommendation_score"];
             });
 
-            // Build Daily Plan (Breakfast, Lunch, Snack, Dinner)
-            $dailyPlan = [
-                "breakfast" => [],
-                "lunch" => [],
-                "snack" => [],
-                "dinner" => []
-            ];
+            // Build Daily Rotating Non-Repeating Plan (Breakfast, Lunch, Snack, Dinner)
+            // Uses calendar day-of-year + year seed so combinations rotate every single day!
+            $daySeed = (int)date("z") + ((int)date("Y") * 365);
 
-            foreach ($csvDishes as $d) {
-                if ($d["category"] === "Breakfast" && count($dailyPlan["breakfast"]) < 2) {
-                    $dailyPlan["breakfast"][] = $d;
-                } elseif ($d["category"] === "Snack" && count($dailyPlan["snack"]) < 1) {
-                    $dailyPlan["snack"][] = $d;
-                } elseif ($d["category"] === "Lunch/Dinner") {
-                    if (count($dailyPlan["lunch"]) < 2) {
-                        $dailyPlan["lunch"][] = $d;
-                    } elseif (count($dailyPlan["dinner"]) < 2) {
-                        $dailyPlan["dinner"][] = $d;
+            $pickRotatingSlot = function($sourceDishes, $targetCat, $count, $salt) use ($daySeed) {
+                $candidates = array_values(array_filter($sourceDishes, function($item) use ($targetCat) {
+                    return $item["category"] === $targetCat;
+                }));
+                if (empty($candidates)) {
+                    $candidates = $sourceDishes;
+                }
+                // Sort by combination of diabetic suitability and daily deterministic seed
+                usort($candidates, function($a, $b) use ($daySeed, $salt) {
+                    $scoreA = $a["recommendation_score"] ?? 80;
+                    $scoreB = $b["recommendation_score"] ?? 80;
+                    if (abs($scoreA - $scoreB) >= 15) {
+                        return $scoreB <=> $scoreA; // Maintain strict health safety
                     }
-                }
-            }
+                    $hA = crc32(($a["title"] ?? "") . "_{$daySeed}_{$salt}");
+                    $hB = crc32(($b["title"] ?? "") . "_{$daySeed}_{$salt}");
+                    return $hA <=> $hB;
+                });
+                return array_slice($candidates, 0, $count);
+            };
 
-            // Fallback fill for any underfilled slot
-            foreach ($csvDishes as $d) {
-                if (count($dailyPlan["breakfast"]) < 2 && !in_array($d, $dailyPlan["breakfast"]) && !in_array($d, $dailyPlan["lunch"])) {
-                    $dailyPlan["breakfast"][] = $d;
-                }
-                if (count($dailyPlan["dinner"]) < 2 && !in_array($d, $dailyPlan["lunch"]) && !in_array($d, $dailyPlan["dinner"])) {
-                    $dailyPlan["dinner"][] = $d;
-                }
-                if (count($dailyPlan["snack"]) < 1 && !in_array($d, $dailyPlan["lunch"]) && !in_array($d, $dailyPlan["snack"])) {
-                    $dailyPlan["snack"][] = $d;
-                }
-            }
+            $dailyPlan = [
+                "breakfast" => $pickRotatingSlot($csvDishes, "Breakfast", 2, 1013),
+                "lunch" => $pickRotatingSlot($csvDishes, "Lunch/Dinner", 2, 2027),
+                "snack" => $pickRotatingSlot($csvDishes, "Snack", 1, 3037),
+                "dinner" => $pickRotatingSlot(array_slice($csvDishes, 2), "Lunch/Dinner", 2, 4049)
+            ];
 
             $topDishes = array_slice($csvDishes, 0, $limit);
 
