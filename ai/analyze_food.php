@@ -9,11 +9,49 @@ if (($_SERVER["REQUEST_METHOD"] ?? "") === "OPTIONS") {
     exit;
 }
 
+// Helper to query Ollama
+function queryOllama(string $endpoint, array $payload, int $timeout = 60): ?array {
+    $ch = curl_init("http://127.0.0.1:11434" . $endpoint);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($payload),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => 5
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($response === false || $httpCode < 200 || $httpCode >= 300) {
+        return null;
+    }
+    return json_decode($response, true);
+}
+
 $rawInput = file_get_contents("php://input");
 if (empty($rawInput)) {
     $rawInput = @file_get_contents("php://stdin");
 }
 $data = json_decode($rawInput, true) ?: [];
+
+// Fast Pre-Warm Endpoint Support
+if (!empty($data["warmup"]) || !empty($_GET["warmup"]) || !empty($_POST["warmup"])) {
+    $warmPayload = [
+        "model" => "qwen2.5vl:3b",
+        "prompt" => "",
+        "keep_alive" => "30m"
+    ];
+    queryOllama("/api/generate", $warmPayload, 30);
+    http_response_code(200);
+    echo json_encode([
+        "status" => "warm",
+        "success" => true,
+        "model" => "qwen2.5vl:3b"
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 // Extract base64 image from payload or multipart files
 $imageBase64 = trim($data["image_base64"] ?? $data["image"] ?? $_POST["image_base64"] ?? $_POST["image"] ?? "");
@@ -43,162 +81,120 @@ if (empty($imageBase64)) {
     exit;
 }
 
-// Helper to query Ollama
-function queryOllama(string $endpoint, array $payload, int $timeout = 90): ?array {
-    $ch = curl_init("http://127.0.0.1:11434" . $endpoint);
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($payload),
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
-        CURLOPT_TIMEOUT => $timeout,
-        CURLOPT_CONNECTTIMEOUT => 5
-    ]);
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+// Vision model: qwen2.5vl:3b (single-pass, zero model swapping)
+$modelName = "qwen2.5vl:3b";
 
-    if ($response === false || $httpCode < 200 || $httpCode >= 300) {
-        return null;
-    }
-    return json_decode($response, true);
-}
+$tightPrompt = "Identify all foods and portion sizes in this photo (Indian or international dishes). Compute realistic nutrition totals specifically for what you see. Return ONLY valid JSON with keys: dish_name (string), calories (int), protein_g (int), carbs_g (int), fat_g (int), fiber_g (int), health_score (int 1-10 for diabetes), health_reason (short 1-line string), items (array of {name: string, calories: int}).";
 
-// 1. Check installed models on Ollama
-$installedModels = [];
-$tagsCh = curl_init("http://127.0.0.1:11434/api/tags");
-curl_setopt_array($tagsCh, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT => 3,
-    CURLOPT_CONNECTTIMEOUT => 2
-]);
-$tagsResp = curl_exec($tagsCh);
-curl_close($tagsCh);
-
-if ($tagsResp !== false) {
-    $tagsJson = json_decode($tagsResp, true);
-    if (!empty($tagsJson["models"]) && is_array($tagsJson["models"])) {
-        foreach ($tagsJson["models"] as $m) {
-            $installedModels[] = strtolower($m["name"] ?? "");
-        }
-    }
-}
-
-// Model selection: qwen2.5vl:3b as primary vision model
-$visionModel = "qwen2.5vl:3b";
-$hasQwenVl = false;
-foreach ($installedModels as $m) {
-    if (strpos($m, "qwen2.5vl") !== false || strpos($m, "qwen2.5-vl") !== false) {
-        $visionModel = $m;
-        $hasQwenVl = true;
-        break;
-    }
-}
-if (!$hasQwenVl) {
-    // If qwen2.5vl is still downloading, fallback to installed vision models
-    foreach ($installedModels as $m) {
-        if (strpos($m, "moondream") !== false || strpos($m, "llava") !== false) {
-            $visionModel = $m;
-            break;
-        }
-    }
-}
-
-// Model for Step 2 text nutrition calculation: qwen2.5:3b
-$textModel = "qwen2.5:3b";
-$hasQwenText = false;
-foreach ($installedModels as $m) {
-    if (strpos($m, "qwen2.5:3b") !== false) {
-        $textModel = $m;
-        $hasQwenText = true;
-        break;
-    }
-}
-if (!$hasQwenText) {
-    $textModel = $visionModel;
-}
-
-// -----------------------------------------------------------------------------
-// STEP 1: Pure Visual Food Identification (No JSON distraction)
-// -----------------------------------------------------------------------------
-$step1Prompt = "Look very carefully at this food photo. Identify every specific food item visible on the plate or bowl (recognize Indian dishes like idli, dosa, pongal, poori, chapati, biryani, sambar, chutney, rice, curry, vada, parotta as well as fruits, snacks, and international dishes) and estimate the visible portion count/size. Reply in 1-2 plain sentences naming only the foods you actually see.";
-
-$step1Payload = [
-    "model" => $visionModel,
-    "prompt" => $step1Prompt,
+$payload = [
+    "model" => $modelName,
+    "prompt" => $tightPrompt,
     "images" => [$imageBase64],
-    "temperature" => 0.1,
-    "stream" => false
+    "format" => "json",
+    "stream" => false,
+    "keep_alive" => "30m",
+    "options" => [
+        "temperature" => 0.1,
+        "num_predict" => 220,
+        "num_ctx" => 1024
+    ]
 ];
 
-$step1Response = queryOllama("/api/generate", $step1Payload, 90);
-$step1Description = trim($step1Response["response"] ?? "");
+$ollamaResponse = queryOllama("/api/generate", $payload, 90);
+$rawText = trim($ollamaResponse["response"] ?? "");
 
-if (empty($step1Description)) {
+if (empty($rawText)) {
     http_response_code(502);
     echo json_encode([
         "success" => false,
         "status" => "error",
-        "message" => "Vision model ($visionModel) failed to identify foods in the image."
+        "message" => "Vision model ($modelName) failed to generate response."
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// -----------------------------------------------------------------------------
-// STEP 2: Dish-Specific Nutrition Calculation (Zero Constant Numbers)
-// -----------------------------------------------------------------------------
-$step2Prompt = "Calculate realistic nutrition values specifically for this meal: \"" . addslashes($step1Description) . "\".\n" .
-"Estimate accurate total calories, protein_g, carbs_g, fat_g, fiber_g, a diabetes-friendly health_score (1 to 10), a 1-line health_reason, and an items array listing each visible food item with its individual estimated calories. Ensure the sum of item calories approximately equals total calories.\n" .
-"Return ONLY valid JSON with keys: dish_name (string), calories (integer), protein_g (integer), carbs_g (integer), fat_g (integer), fiber_g (integer), health_score (integer 1-10), health_reason (string), items (array of {name: string, calories: integer}).";
-
-$step2Payload = [
-    "model" => $textModel,
-    "prompt" => $step2Prompt,
-    "format" => "json",
-    "temperature" => 0.2,
-    "stream" => false
-];
-
-$step2Response = queryOllama("/api/generate", $step2Payload, 60);
-$step2RawText = trim($step2Response["response"] ?? "");
-
-$cleanJson = preg_replace('/^```(?:json)?\s*/i', '', $step2RawText);
+$cleanJson = preg_replace('/^```(?:json)?\s*/i', '', $rawText);
 $cleanJson = preg_replace('/\s*```$/', '', $cleanJson);
 $cleanJson = trim($cleanJson);
 
-$parsedNutrition = json_decode($cleanJson, true);
-if (!is_array($parsedNutrition) || empty($parsedNutrition["dish_name"])) {
-    if (preg_match('/\{[\s\S]*\}/', $step2RawText, $matches)) {
-        $parsedNutrition = json_decode($matches[0], true);
+$parsed = json_decode($cleanJson, true);
+if (!is_array($parsed) || empty($parsed["dish_name"])) {
+    // Repair dangling JSON if num_predict capped output before array/object closed
+    if (preg_match('/\{[\s\S]*"dish_name"\s*:/i', $cleanJson)) {
+        $repaired = preg_replace('/,\s*\{[^}]*$/', '', $cleanJson);
+        $repaired = rtrim($repaired, " ,\r\n\t");
+        if (substr($repaired, -1) !== ']' && strpos($repaired, '"items"') !== false) {
+            $repaired .= ']';
+        }
+        if (substr($repaired, -1) !== '}') {
+            $repaired .= '}';
+        }
+        $parsed = json_decode($repaired, true);
     }
 }
 
-if (!is_array($parsedNutrition) || empty($parsedNutrition["dish_name"])) {
+// Regex fallback for individual keys if JSON is still incomplete
+$dishName = "";
+if (is_array($parsed) && !empty($parsed["dish_name"])) {
+    $dishName = trim($parsed["dish_name"]);
+} elseif (preg_match('/"dish_name"\s*:\s*"([^"]+)"/i', $cleanJson, $m)) {
+    $dishName = trim($m[1]);
+}
+
+if (empty($dishName)) {
     http_response_code(502);
     echo json_encode([
         "success" => false,
         "status" => "error",
-        "message" => "Nutrition calculation failed to generate structured JSON.",
-        "visual_description" => $step1Description
+        "message" => "Unable to parse food identification from model response.",
+        "raw_response" => $rawText
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// Extract exact values from AI - ZERO CONSTANT / HARDCODED NUMBERS
-$dishName = trim($parsedNutrition["dish_name"]);
-$calories = intval($parsedNutrition["calories"] ?? 0);
-$protein = intval($parsedNutrition["protein_g"] ?? 0);
-$carbs = intval($parsedNutrition["carbs_g"] ?? 0);
-$fat = intval($parsedNutrition["fat_g"] ?? 0);
-$fiber = intval($parsedNutrition["fiber_g"] ?? 0);
-$healthScore = intval($parsedNutrition["health_score"] ?? 7);
+$calories = isset($parsed["calories"]) ? intval($parsed["calories"]) : 0;
+if ($calories === 0 && preg_match('/"calories"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+    $calories = intval($m[1]);
+}
+
+$protein = isset($parsed["protein_g"]) ? intval($parsed["protein_g"]) : 0;
+if ($protein === 0 && preg_match('/"protein_g"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+    $protein = intval($m[1]);
+}
+
+$carbs = isset($parsed["carbs_g"]) ? intval($parsed["carbs_g"]) : 0;
+if ($carbs === 0 && preg_match('/"carbs_g"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+    $carbs = intval($m[1]);
+}
+
+$fat = isset($parsed["fat_g"]) ? intval($parsed["fat_g"]) : 0;
+if ($fat === 0 && preg_match('/"fat_g"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+    $fat = intval($m[1]);
+}
+
+$fiber = isset($parsed["fiber_g"]) ? intval($parsed["fiber_g"]) : 0;
+if ($fiber === 0 && preg_match('/"fiber_g"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+    $fiber = intval($m[1]);
+}
+
+$healthScore = isset($parsed["health_score"]) ? intval($parsed["health_score"]) : 7;
+if (preg_match('/"health_score"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+    $healthScore = intval($m[1]);
+}
 if ($healthScore < 1) $healthScore = 1;
 if ($healthScore > 10) $healthScore = 10;
-$healthReason = trim($parsedNutrition["health_reason"] ?? "$dishName nutrition calculated for glycemic control.");
+
+$healthReason = isset($parsed["health_reason"]) ? trim($parsed["health_reason"]) : "";
+if ($healthReason === "" && preg_match('/"health_reason"\s*:\s*"([^"]+)"/i', $cleanJson, $m)) {
+    $healthReason = trim($m[1]);
+}
+if ($healthReason === "") {
+    $healthReason = "$dishName prepared with moderate glycemic impact.";
+}
 
 $subItems = [];
-if (!empty($parsedNutrition["items"]) && is_array($parsedNutrition["items"])) {
-    foreach ($parsedNutrition["items"] as $it) {
+if (!empty($parsed["items"]) && is_array($parsed["items"])) {
+    foreach ($parsed["items"] as $it) {
         if (!is_array($it)) continue;
         $itName = trim($it["name"] ?? "");
         if ($itName === "") continue;
@@ -228,7 +224,7 @@ if (empty($subItems)) {
 
 $outputData = [
     "dish_name" => $dishName,
-    "visual_description" => $step1Description,
+    "visual_description" => "$dishName ($calories kcal)",
     "meal_type" => $mealType,
     "calories" => $calories,
     "protein_g" => $protein,
@@ -244,8 +240,8 @@ http_response_code(200);
 echo json_encode([
     "success" => true,
     "status" => "success",
-    "vision_model" => $visionModel,
-    "text_model" => $textModel,
+    "vision_model" => $modelName,
+    "text_model" => $modelName,
     "data" => $outputData,
     "dish_name" => $dishName,
     "calories" => $calories,
