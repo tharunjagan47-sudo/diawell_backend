@@ -84,7 +84,7 @@ if (empty($imageBase64)) {
 // Vision model: qwen2.5vl:3b (single-pass, zero model swapping)
 $modelName = "qwen2.5vl:3b";
 
-$tightPrompt = "Identify all foods and portion sizes in this photo (Indian or international dishes). Compute realistic nutrition totals specifically for what you see. Return ONLY valid JSON with keys: dish_name (string), calories (int), protein_g (int), carbs_g (int), fat_g (int), fiber_g (int), health_score (int 1-10 for diabetes), health_reason (short 1-line string), items (array of {name: string, calories: int, carbs_g: int, protein_g: int, fat_g: int, fiber_g: int}).";
+$tightPrompt = "Identify all foods and portion sizes in this photo (Indian or international dishes). Compute realistic nutrition totals specifically for what you see. Return ONLY valid JSON with keys: dish_name (string), calories (int), protein_g (int), carbs_g (int), fat_g (int), fiber_g (int), health_score (int 1-10 for diabetes), health_reason (short 1-line string), items (array of {name: string, calories: int}).";
 
 $payload = [
     "model" => $modelName,
@@ -95,7 +95,7 @@ $payload = [
     "keep_alive" => "30m",
     "options" => [
         "temperature" => 0.1,
-        "num_predict" => 260,
+        "num_predict" => 220,
         "num_ctx" => 1024
     ]
 ];
@@ -156,36 +156,25 @@ $calories = isset($parsed["calories"]) ? intval($parsed["calories"]) : 0;
 if ($calories === 0 && preg_match('/"calories"\s*:\s*(\d+)/i', $cleanJson, $m)) {
     $calories = intval($m[1]);
 }
-if ($calories <= 0) {
-    $calories = 320;
-}
 
-$protein = isset($parsed["protein_g"]) ? intval($parsed["protein_g"]) : (isset($parsed["protein"]) ? intval($parsed["protein"]) : 0);
-if ($protein === 0 && preg_match('/"(?:protein_g|protein)"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+$protein = isset($parsed["protein_g"]) ? intval($parsed["protein_g"]) : 0;
+if ($protein === 0 && preg_match('/"protein_g"\s*:\s*(\d+)/i', $cleanJson, $m)) {
     $protein = intval($m[1]);
 }
 
-$carbs = isset($parsed["carbs_g"]) ? intval($parsed["carbs_g"]) : (isset($parsed["carbs"]) ? intval($parsed["carbs"]) : (isset($parsed["carbohydrates"]) ? intval($parsed["carbohydrates"]) : 0));
-if ($carbs === 0 && preg_match('/"(?:carbs_g|carbs|carbohydrates)"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+$carbs = isset($parsed["carbs_g"]) ? intval($parsed["carbs_g"]) : 0;
+if ($carbs === 0 && preg_match('/"carbs_g"\s*:\s*(\d+)/i', $cleanJson, $m)) {
     $carbs = intval($m[1]);
 }
 
-$fat = isset($parsed["fat_g"]) ? intval($parsed["fat_g"]) : (isset($parsed["fat"]) ? intval($parsed["fat"]) : (isset($parsed["fats"]) ? intval($parsed["fats"]) : 0));
-if ($fat === 0 && preg_match('/"(?:fat_g|fat|fats)"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+$fat = isset($parsed["fat_g"]) ? intval($parsed["fat_g"]) : 0;
+if ($fat === 0 && preg_match('/"fat_g"\s*:\s*(\d+)/i', $cleanJson, $m)) {
     $fat = intval($m[1]);
 }
 
-$fiber = isset($parsed["fiber_g"]) ? intval($parsed["fiber_g"]) : (isset($parsed["fiber"]) ? intval($parsed["fiber"]) : 0);
-if ($fiber === 0 && preg_match('/"(?:fiber_g|fiber)"\s*:\s*(\d+)/i', $cleanJson, $m)) {
+$fiber = isset($parsed["fiber_g"]) ? intval($parsed["fiber_g"]) : 0;
+if ($fiber === 0 && preg_match('/"fiber_g"\s*:\s*(\d+)/i', $cleanJson, $m)) {
     $fiber = intval($m[1]);
-}
-
-// Fallback estimation if model omitted specific macro numbers
-if ($protein === 0 && $carbs === 0 && $fat === 0) {
-    $carbs = intval(round(($calories * 0.50) / 4));
-    $protein = intval(round(($calories * 0.20) / 4));
-    $fat = intval(round(($calories * 0.30) / 9));
-    $fiber = max(3, intval(round($carbs * 0.12)));
 }
 
 $healthScore = isset($parsed["health_score"]) ? intval($parsed["health_score"]) : 7;
@@ -204,28 +193,19 @@ if ($healthReason === "") {
 }
 
 $subItems = [];
-$totalItemCount = !empty($parsed["items"]) && is_array($parsed["items"]) ? count($parsed["items"]) : 1;
 if (!empty($parsed["items"]) && is_array($parsed["items"])) {
     foreach ($parsed["items"] as $it) {
         if (!is_array($it)) continue;
         $itName = trim($it["name"] ?? "");
         if ($itName === "") continue;
-        $itCal = intval($it["calories"] ?? 0);
-        $ratio = ($calories > 0 && $itCal > 0) ? ($itCal / $calories) : (1.0 / max($totalItemCount, 1));
-
-        $itCarbs = (isset($it["carbs_g"]) && floatval($it["carbs_g"]) > 0) ? floatval($it["carbs_g"]) : ((isset($it["carbs"]) && floatval($it["carbs"]) > 0) ? floatval($it["carbs"]) : round($carbs * $ratio, 1));
-        $itProt = (isset($it["protein_g"]) && floatval($it["protein_g"]) > 0) ? floatval($it["protein_g"]) : ((isset($it["protein"]) && floatval($it["protein"]) > 0) ? floatval($it["protein"]) : round($protein * $ratio, 1));
-        $itFat = (isset($it["fat_g"]) && floatval($it["fat_g"]) > 0) ? floatval($it["fat_g"]) : ((isset($it["fat"]) && floatval($it["fat"]) > 0) ? floatval($it["fat"]) : round($fat * $ratio, 1));
-        $itFib = (isset($it["fiber_g"]) && floatval($it["fiber_g"]) > 0) ? floatval($it["fiber_g"]) : ((isset($it["fiber"]) && floatval($it["fiber"]) > 0) ? floatval($it["fiber"]) : round($fiber * $ratio, 1));
-
         $subItems[] = [
             "name" => $itName,
             "portion" => trim($it["portion"] ?? "1 serving"),
-            "calories" => $itCal > 0 ? $itCal : intval(round($calories * $ratio)),
-            "carbs_g" => floatval($itCarbs),
-            "protein_g" => floatval($itProt),
-            "fat_g" => floatval($itFat),
-            "fiber_g" => floatval($itFib)
+            "calories" => intval($it["calories"] ?? 0),
+            "carbs_g" => floatval($it["carbs_g"] ?? 0),
+            "protein_g" => floatval($it["protein_g"] ?? 0),
+            "fat_g" => floatval($it["fat_g"] ?? 0),
+            "fiber_g" => floatval($it["fiber_g"] ?? 0)
         ];
     }
 }
