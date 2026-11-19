@@ -513,6 +513,18 @@ try {
                     $highlights[] = "Complex Legume";
                 }
 
+                // South Indian Diabetic Food Prioritization (Chennai Dietary Preference)
+                if (strpos($dishLower, "sambar") !== false || strpos($dishLower, "rasam") !== false || 
+                    strpos($dishLower, "idli") !== false || strpos($dishLower, "dosa") !== false || 
+                    strpos($dishLower, "poriyal") !== false || strpos($dishLower, "kootu") !== false ||
+                    strpos($dishLower, "sundal") !== false || strpos($dishLower, "millet") !== false || 
+                    strpos($dishLower, "ragi") !== false || strpos($dishLower, "kambu") !== false || 
+                    strpos($dishLower, "thinai") !== false || strpos($dishLower, "buttermilk") !== false || 
+                    strpos($dishLower, "upma") !== false || strpos($dishLower, "pesarattu") !== false) {
+                    $score += 18;
+                    $highlights[] = "South Indian";
+                }
+
                 // Low-Carb / Keto Bonus
                 if ($isLowCarb) {
                     if ($carbs <= 10.0) {
