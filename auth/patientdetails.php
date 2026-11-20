@@ -96,7 +96,17 @@ if ($method === "POST") {
         // Verify user exists
         $check = $pdo->prepare("SELECT id FROM users WHERE id = :id LIMIT 1");
         $check->execute([":id" => $userId]);
-        if (!$check->fetch()) {
+        $existing = $check->fetch();
+        if (!$existing && isset($_SESSION["user_id"])) {
+            $sessId = (int) $_SESSION["user_id"];
+            $sCheck = $pdo->prepare("SELECT id FROM users WHERE id = :id LIMIT 1");
+            $sCheck->execute([":id" => $sessId]);
+            if ($sCheck->fetch()) {
+                $userId = $sessId;
+                $existing = true;
+            }
+        }
+        if (!$existing) {
             respond(false, "User account not found with ID: " . $userId, 404);
         }
 
