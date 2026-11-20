@@ -3,7 +3,8 @@ require_once __DIR__ . '/../config/helpers.php';
 require_once __DIR__ . '/../config/db.php';
 
 $method = $_SERVER["REQUEST_METHOD"];
-$userId = getUserId();
+$data = getRequestData();
+$userId = getUserId($data);
 
 if (!$userId) {
     respond(false, "User not specified. Please provide user_id or log in first.", 401);
@@ -16,7 +17,7 @@ if ($method === "GET") {
     try {
         $stmt = $pdo->prepare(
             "SELECT u.id, u.full_name, u.email, u.diabetes_type, u.age,
-                    u.height_cm, u.weight_kg, u.profile_photo,
+                    u.height_cm, u.weight_kg, u.profile_photo, u.profile_pic,
                     u.current_glucose_mg_dl, u.target_glucose_mg_dl, u.created_at,
                     hp.health_focus, hp.dietary_preferences, hp.allergies AS health_allergies, hp.activity_level,
                     fp.preferred_diet, fp.allergies AS food_allergies, fp.preferred_styles, fp.foods_to_avoid
@@ -36,7 +37,8 @@ if ($method === "GET") {
         // Construct photo URL
         $photoUrl = null;
         if (!empty($user["profile_photo"])) {
-            $photoUrl = "http://" . $_SERVER["HTTP_HOST"] . "/DiaWell_backend/" . ltrim($user["profile_photo"], "/");
+            $host = $_SERVER["HTTP_HOST"] ?? "127.0.0.1";
+            $photoUrl = "http://" . $host . "/DiaWell_backend/" . ltrim($user["profile_photo"], "/");
         }
 
         $profileData = [
@@ -51,6 +53,7 @@ if ($method === "GET") {
             "target_glucose_mg_dl" => $user["target_glucose_mg_dl"] !== null ? (float) $user["target_glucose_mg_dl"] : null,
             "profile_photo" => $user["profile_photo"],
             "profile_photo_url" => $photoUrl,
+            "profile_pic" => $user["profile_pic"] ?? null,
             "created_at" => $user["created_at"],
             "health_preferences" => $user["health_focus"] ? [
                 "health_focus" => $user["health_focus"],
@@ -75,11 +78,29 @@ if ($method === "GET") {
 }
 
 // ==========================================
-// POST: Upload Profile Photo (multipart/form-data)
+// POST: Upload Profile Photo (JSON Base64 or multipart)
 // ==========================================
 if ($method === "POST") {
-    if (!isset($_FILES["profile_photo"])) {
-    // Detect file uploaded under any standard key: 'profile_photo', 'photo', 'image', 'file', etc.
+    // 1. Check if Base64 JSON payload is passed
+    $profilePic = trim($data["profile_pic"] ?? $data["profilePic"] ?? $data["image_base64"] ?? "");
+    if (!empty($profilePic)) {
+        if (preg_match('#^data:image/\w+;base64,#i', $profilePic)) {
+            $profilePic = preg_replace('#^data:image/\w+;base64,#i', '', $profilePic);
+        }
+        try {
+            $update = $pdo->prepare("UPDATE users SET profile_pic = :pic WHERE id = :id");
+            $update->execute([":pic" => $profilePic, ":id" => $userId]);
+
+            respond(true, "Profile photo updated successfully.", 200, [
+                "user_id" => (int) $userId,
+                "profile_pic" => $profilePic
+            ]);
+        } catch (Throwable $e) {
+            respond(false, "Failed to update profile pic: " . $e->getMessage(), 500);
+        }
+    }
+
+    // 2. Fallback to multipart file upload
     $file = null;
     $candidateKeys = ["profile_photo", "photo", "image", "file", "avatar", "picture"];
     foreach ($candidateKeys as $k) {
@@ -96,35 +117,22 @@ if ($method === "POST") {
     }
 
     if (!$file) {
-        respond(false, "Please select an image file using multipart/form-data key 'profile_photo'.", 400);
+        respond(false, "Please provide 'profile_pic' (Base64) or upload a photo using key 'profile_photo'.", 400);
     }
-
-    $file = $_FILES["profile_photo"];
 
     if ($file["error"] !== UPLOAD_ERR_OK) {
         respond(false, "File upload failed with error code: " . $file["error"], 400);
     }
 
-    // Maximum file size: 5 MB
-    if ($file["size"] > 5 * 1024 * 1024) {
-        respond(false, "Profile photo size must be smaller than 5 MB.", 400);
-    // Maximum file size: 10 MB
     if ($file["size"] > 10 * 1024 * 1024) {
         respond(false, "Profile photo size must be smaller than 10 MB.", 400);
     }
 
-    // Verify MIME type using FileInfo
-    $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mime = $finfo->file($file["tmp_name"]);
+    $uploadDir = __DIR__ . "/../upload/profile_photos/";
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+        respond(false, "Could not create upload directory on server.", 500);
+    }
 
-    $allowedMimes = [
-        "image/jpeg" => "jpg",
-        "image/png"  => "png",
-        "image/webp" => "webp"
-    ];
-
-    if (!isset($allowedMimes[$mime]) || @getimagesize($file["tmp_name"]) === false) {
-        respond(false, "Only JPG, PNG, and WEBP images are allowed.", 400);
     $extension = "jpg";
     $imageInfo = @getimagesize($file["tmp_name"]);
     if ($imageInfo !== false && !empty($imageInfo["mime"])) {
@@ -133,84 +141,43 @@ if ($method === "POST") {
             $extension = "png";
         } elseif (strpos($mime, "webp") !== false) {
             $extension = "webp";
-        } else {
-            $extension = "jpg";
-        }
-    } else {
-        $ext = strtolower(pathinfo($file["name"] ?? "", PATHINFO_EXTENSION));
-        if (in_array($ext, ["jpg", "jpeg", "png", "webp"])) {
-            $extension = ($ext === "jpeg") ? "jpg" : $ext;
-        } else {
-            respond(false, "Only JPG, PNG, and WEBP images are allowed.", 400);
         }
     }
 
-    $uploadDir = __DIR__ . "/../upload/profile_photos/";
-
-    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-        respond(false, "Could not create upload directory on server.", 500);
-    }
-
-    $extension = $allowedMimes[$mime];
     $filename = bin2hex(random_bytes(16)) . "." . $extension;
     $destination = $uploadDir . $filename;
-    $newPhotoSaved = false;
 
     try {
-        // Fetch existing user to find previous photo
-        $stmt = $pdo->prepare("SELECT profile_photo FROM users WHERE id = :id LIMIT 1");
-        $stmt->execute([":id" => $userId]);
-        $user = $stmt->fetch();
-
-        if (!$user) {
-            respond(false, "User account not found with ID: " . $userId, 404);
-        }
-
-        // Move uploaded file
-        if (!move_uploaded_file($file["tmp_name"], $destination)) {
+        if (!move_uploaded_file($file["tmp_name"], $destination) && !copy($file["tmp_name"], $destination)) {
             respond(false, "Failed to save uploaded image on the server.", 500);
-            if (!copy($file["tmp_name"], $destination)) {
-                respond(false, "Failed to save uploaded image on the server.", 500);
-            }
         }
 
-        $newPhotoSaved = true;
         $photoRelPath = "upload/profile_photos/" . $filename;
+        $fileBytes = @file_get_contents($destination);
+        $base64Data = ($fileBytes !== false) ? base64_encode($fileBytes) : null;
 
-        // Update database
-        $update = $pdo->prepare("UPDATE users SET profile_photo = :photo WHERE id = :id");
+        $update = $pdo->prepare("UPDATE users SET profile_photo = :photo, profile_pic = COALESCE(:pic, profile_pic) WHERE id = :id");
         $update->execute([
             ":photo" => $photoRelPath,
+            ":pic" => $base64Data,
             ":id" => $userId
         ]);
 
-        // Clean up previous photo file if it was in upload folder
-        $oldPhoto = $user["profile_photo"] ?? "";
-        if (strpos($oldPhoto, "upload/profile_photos/") === 0) {
-            $oldFilename = basename($oldPhoto);
-            $oldPath = $uploadDir . $oldFilename;
-            if ($oldFilename !== $filename && is_file($oldPath)) {
-                @unlink($oldPath);
-            }
-        }
-
-        $photoFullUrl = "http://" . $_SERVER["HTTP_HOST"] . "/DiaWell_backend/" . $photoRelPath;
         $host = $_SERVER["HTTP_HOST"] ?? "127.0.0.1";
         $photoFullUrl = "http://" . $host . "/DiaWell_backend/" . $photoRelPath;
 
         respond(true, "Profile photo uploaded successfully.", 200, [
-            "user_id" => $userId,
             "user_id" => (int) $userId,
             "profile_photo" => $photoRelPath,
-            "profile_photo_url" => $photoFullUrl
+            "profile_photo_url" => $photoFullUrl,
+            "profile_pic" => $base64Data
         ]);
 
     } catch (Throwable $e) {
-        if ($newPhotoSaved && is_file($destination)) {
+        if (is_file($destination)) {
             @unlink($destination);
         }
         error_log("Photo upload error: " . $e->getMessage());
-        respond(false, "Failed to upload photo due to server error.", 500);
         respond(false, "Failed to upload photo due to server error: " . $e->getMessage(), 500);
     }
 }

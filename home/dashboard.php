@@ -17,7 +17,7 @@ try {
     // 1. User profile
     $userStmt = $pdo->prepare(
         "SELECT id, full_name, email, diabetes_type, current_glucose_mg_dl, target_glucose_mg_dl, 
-                target_fasting_glucose, target_postmeal_glucose, profile_photo 
+                target_fasting_glucose, target_postmeal_glucose, profile_photo, profile_pic 
          FROM users 
          WHERE id = :id 
          LIMIT 1"
@@ -308,7 +308,8 @@ try {
         "profile" => [
             "name" => $user["full_name"],
             "diabetes_type" => $user["diabetes_type"] ?? "Type 2",
-            "photo_url" => $photoUrl
+            "photo_url" => $photoUrl,
+            "profile_pic" => $user["profile_pic"] ?? null
         ],
         "metrics" => [
             "glucose" => [

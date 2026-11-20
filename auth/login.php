@@ -25,7 +25,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 try {
     $stmt = $pdo->prepare(
         "SELECT id, full_name, email, password_hash, diabetes_type, age, 
-                height_cm, weight_kg, profile_photo, current_glucose_mg_dl, target_glucose_mg_dl, created_at
+                height_cm, weight_kg, profile_photo, profile_pic, current_glucose_mg_dl, target_glucose_mg_dl, created_at
          FROM users 
          WHERE email = :email 
          LIMIT 1"
@@ -62,6 +62,7 @@ try {
         "target_glucose_mg_dl" => $user["target_glucose_mg_dl"] !== null ? (float) $user["target_glucose_mg_dl"] : null,
         "profile_photo" => $user["profile_photo"],
         "profile_photo_url" => $profilePhotoUrl,
+        "profile_pic" => $user["profile_pic"] ?? null,
         "is_profile_completed" => $isProfileCompleted,
         "next_screen" => $isProfileCompleted ? "dashboard" : "patient_profile"
     ]);

@@ -42,7 +42,8 @@ if ($method === "GET") {
             "target_fasting_glucose" => isset($user["target_fasting_glucose"]) && $user["target_fasting_glucose"] !== null ? (int) $user["target_fasting_glucose"] : 100,
             "target_postmeal_glucose" => isset($user["target_postmeal_glucose"]) && $user["target_postmeal_glucose"] !== null ? (int) $user["target_postmeal_glucose"] : 140,
             "profile_photo" => $user["profile_photo"] ?? null,
-            "profile_photo_url" => $photoUrl
+            "profile_photo_url" => $photoUrl,
+            "profile_pic" => $user["profile_pic"] ?? null
         ]);
 
     } catch (Throwable $e) {
@@ -135,6 +136,10 @@ if ($method === "POST" || $method === "PUT") {
             "target_postmeal_glucose" => $updatedTargetPostmeal
         ];
 
+        if (!empty($data["profile_pic"])) {
+            $colMap["profile_pic"] = trim($data["profile_pic"]);
+        }
+
         foreach ($colMap as $col => $val) {
             if (in_array($col, $existingCols)) {
                 $fields[] = "$col = :$col";
@@ -167,7 +172,8 @@ if ($method === "POST" || $method === "PUT") {
             "target_fasting_glucose" => $updatedTargetFasting,
             "target_postmeal_glucose" => $updatedTargetPostmeal,
             "profile_photo" => $currentUser["profile_photo"],
-            "profile_photo_url" => $photoUrl
+            "profile_photo_url" => $photoUrl,
+            "profile_pic" => $currentUser["profile_pic"] ?? null
         ]);
 
     } catch (Throwable $e) {
