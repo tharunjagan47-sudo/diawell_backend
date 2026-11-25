@@ -11,6 +11,27 @@ if (!$userId) {
 }
 
 // ==========================================
+// DELETE or POST remove: Remove profile photo completely
+// ==========================================
+if (isRemovePhotoRequest($method, $data)) {
+    try {
+        if (clearUserProfilePhoto($pdo, $userId) === null) {
+            respond(false, "User not found with ID: " . $userId, 404);
+        }
+
+        respond(true, "Profile photo removed successfully.", 200, [
+            "user_id" => (int) $userId,
+            "profile_photo" => null,
+            "profile_photo_url" => null,
+            "profile_pic" => null
+        ]);
+    } catch (Throwable $e) {
+        error_log("Remove profile photo error: " . $e->getMessage());
+        respond(false, "Failed to remove profile photo: " . $e->getMessage(), 500);
+    }
+}
+
+// ==========================================
 // GET: View full user profile with photo & preferences
 // ==========================================
 if ($method === "GET") {
