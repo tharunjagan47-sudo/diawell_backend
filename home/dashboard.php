@@ -270,18 +270,17 @@ try {
     );
     $mCheckStmt->execute([":uid" => $userId, ":d" => $today]);
     $medsDone = ((int) $mCheckStmt->fetchColumn()) > 0;
-    $dinnerMedsDone = $dinnerDone || $medsDone;
-
     // Routine checklist
     $routineItems = [
         ["icon" => "🥣", "label" => "Breakfast", "is_done" => $breakfastDone],
         ["icon" => "🩸", "label" => "Glucose", "is_done" => $glucoseDone],
         ["icon" => "🥗", "label" => "Lunch", "is_done" => $lunchDone],
-        ["icon" => "💊", "label" => "Dinner/Meds", "is_done" => $dinnerMedsDone]
+        ["icon" => "🍽️", "label" => "Dinner", "is_done" => $dinnerDone],
+        ["icon" => "💊", "label" => "Meds", "is_done" => $medsDone]
     ];
 
-    $doneCount = ($breakfastDone ? 1 : 0) + ($glucoseDone ? 1 : 0) + ($lunchDone ? 1 : 0) + ($dinnerMedsDone ? 1 : 0);
-    $adherencePercent = round(($doneCount / 4) * 100);
+    $doneCount = ($breakfastDone ? 1 : 0) + ($glucoseDone ? 1 : 0) + ($lunchDone ? 1 : 0) + ($dinnerDone ? 1 : 0) + ($medsDone ? 1 : 0);
+    $adherencePercent = round(($doneCount / 5) * 100);
     $wellnessSubtitle = ($doneCount > 0) ? "Daily Wellness • {$adherencePercent}% On Track" : "Daily Wellness • Start your day";
 
     // Nutrition values
