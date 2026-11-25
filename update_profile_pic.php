@@ -2,9 +2,10 @@
 require_once __DIR__ . '/config/helpers.php';
 require_once __DIR__ . '/config/db.php';
 
-// Allow POST requests only
-if ($_SERVER["REQUEST_METHOD"] !== "POST") {
-    respond(false, "Method not allowed. Use POST.", 405);
+// Allow POST or DELETE requests
+$method = $_SERVER["REQUEST_METHOD"];
+if ($method !== "POST" && $method !== "DELETE") {
+    respond(false, "Method not allowed. Use POST or DELETE.", 405);
 }
 
 // Read input data (JSON or POST body)
@@ -22,6 +23,25 @@ if (!empty($data["user_id"])) {
 
 if (!$userId) {
     respond(false, "User not specified. Please provide user_id or log in first.", 401);
+}
+
+if (isRemovePhotoRequest($method, $data)) {
+    try {
+        if (clearUserProfilePhoto($pdo, $userId) === null) {
+            respond(false, "User account not found with ID: " . $userId, 404);
+        }
+
+        respond(true, "Profile picture removed successfully.", 200, [
+            "status" => "success",
+            "user_id" => $userId,
+            "profile_photo" => null,
+            "profile_photo_url" => null,
+            "profile_pic" => null
+        ]);
+    } catch (Throwable $e) {
+        error_log("update_profile_pic remove error: " . $e->getMessage());
+        respond(false, "Database error removing profile picture: " . $e->getMessage(), 500);
+    }
 }
 
 // Extract profile picture base64 string
