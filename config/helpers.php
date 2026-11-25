@@ -165,6 +165,47 @@ function getProfilePhotoUrl($path) {
     return getBaseUrl() . "/" . ltrim($path, "/");
 }
 
+/**
+ * Checks whether the incoming request explicitly asks to remove the profile photo.
+ */
+function isRemovePhotoRequest($method, $data = []) {
+    if ($method === "DELETE") {
+        return true;
+    }
+    if (!is_array($data)) {
+        return false;
+    }
+    $action = strtolower(trim((string) ($data["action"] ?? "")));
+    return $action === "remove" || $action === "delete"
+        || !empty($data["remove_photo"]) || !empty($data["remove"]);
+}
+
+/**
+ * Clears both stored photo file and Base64 column for the specified user.
+ * Returns null if user does not exist, or true on success.
+ */
+function clearUserProfilePhoto($pdo, $userId) {
+    $stmt = $pdo->prepare("SELECT id, profile_photo FROM users WHERE id = :id LIMIT 1");
+    $stmt->execute([":id" => $userId]);
+    $user = $stmt->fetch();
+
+    if (!$user) {
+        return null;
+    }
+
+    if (!empty($user["profile_photo"])) {
+        $photoFile = __DIR__ . "/../" . ltrim($user["profile_photo"], "/");
+        if (is_file($photoFile)) {
+            @unlink($photoFile);
+        }
+    }
+
+    $clearStmt = $pdo->prepare("UPDATE users SET profile_photo = NULL, profile_pic = NULL WHERE id = :id");
+    $clearStmt->execute([":id" => $userId]);
+
+    return true;
+}
+
 
 
 
