@@ -55,12 +55,8 @@ if ($method === "GET") {
             respond(false, "User not found with ID: " . $userId, 404);
         }
 
-        // Construct photo URL
-        $photoUrl = null;
-        if (!empty($user["profile_photo"])) {
-            $host = $_SERVER["HTTP_HOST"] ?? "127.0.0.1";
-            $photoUrl = "http://" . $host . "/DiaWell_backend/" . ltrim($user["profile_photo"], "/");
-        }
+        // Construct photo URL using centralized protocol-aware helper
+        $photoUrl = getProfilePhotoUrl($user["profile_photo"]);
 
         $profileData = [
             "user_id" => (int) $user["id"],
