@@ -471,9 +471,6 @@ if (!empty($history) && is_array($history)) {
 }
 $messagesPayload[] = ["role" => "user", "content" => $normalizedPrompt];
 
-/**
- * Query Local Ollama Instance
- */
 function queryOllama(string $url, string $model, array $messages, array $options): ?string {
     $payload = json_encode([
         "model" => $model,
@@ -529,126 +526,7 @@ function queryOllama(string $url, string $model, array $messages, array $options
     return null;
 }
 
-/**
- * Modular Cloud LLM: Google Gemini API (generateContent)
- */
-function queryGemini(string $apiKey, string $model, array $messages, string $systemPrompt): ?string {
-    if (empty($apiKey)) return null;
-
-    $contents = [];
-    foreach ($messages as $msg) {
-        if ($msg["role"] === "system") continue;
-        $role = ($msg["role"] === "assistant") ? "model" : "user";
-        $contents[] = [
-            "role" => $role,
-            "parts" => [["text" => $msg["content"]]]
-        ];
-    }
-
-    $payload = json_encode([
-        "system_instruction" => [
-            "parts" => [["text" => $systemPrompt]]
-        ],
-        "contents" => $contents,
-        "generationConfig" => [
-            "temperature" => 0.3,
-            "maxOutputTokens" => 180
-        ]
-    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key=" . urlencode($apiKey);
-
-    if (function_exists('curl_init')) {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
-            CURLOPT_TIMEOUT => 12,
-            CURLOPT_CONNECTTIMEOUT => 4
-        ]);
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($response !== false && $httpCode >= 200 && $httpCode < 300) {
-            $decoded = json_decode($response, true);
-            $text = trim($decoded["candidates"][0]["content"]["parts"][0]["text"] ?? "");
-            if (!empty($text)) {
-                return $text;
-            }
-        }
-    }
-
-    return null;
-}
-
-/**
- * Modular Cloud LLM: Groq Cloud API (OpenAI-compatible chat completions)
- */
-function queryGroq(string $apiKey, string $model, array $messages, array $options): ?string {
-    if (empty($apiKey)) return null;
-
-    $payload = json_encode([
-        "model" => $model,
-        "messages" => $messages,
-        "max_tokens" => 180,
-        "temperature" => 0.3
-    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-
-    $url = "https://api.groq.com/openai/v1/chat/completions";
-
-    if (function_exists('curl_init')) {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => [
-                "Content-Type: application/json",
-                "Authorization: Bearer " . trim($apiKey)
-            ],
-            CURLOPT_TIMEOUT => 12,
-            CURLOPT_CONNECTTIMEOUT => 4
-        ]);
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($response !== false && $httpCode >= 200 && $httpCode < 300) {
-            $decoded = json_decode($response, true);
-            $text = trim($decoded["choices"][0]["message"]["content"] ?? "");
-            if (!empty($text)) {
-                return $text;
-            }
-        }
-    }
-
-    return null;
-}
-
-// Modular Provider Dispatcher: "ollama" (default), "gemini", or "groq"
-$aiProvider = strtolower(getenv("AI_PROVIDER") ?: ($_ENV["AI_PROVIDER"] ?? "ollama"));
-$aiReply = null;
-
-switch ($aiProvider) {
-    case "gemini":
-        $geminiKey = getenv("GEMINI_API_KEY") ?: ($_ENV["GEMINI_API_KEY"] ?? "");
-        $geminiModel = getenv("GEMINI_MODEL") ?: ($_ENV["GEMINI_MODEL"] ?? "gemini-1.5-flash");
-        $aiReply = queryGemini($geminiKey, $geminiModel, $messagesPayload, $systemPrompt);
-        break;
-
-    case "groq":
-        $groqKey = getenv("GROQ_API_KEY") ?: ($_ENV["GROQ_API_KEY"] ?? "");
-        $groqModel = getenv("GROQ_MODEL") ?: ($_ENV["GROQ_MODEL"] ?? "llama-3.1-8b-instant");
-        $aiReply = queryGroq($groqKey, $groqModel, $messagesPayload, $options);
-        break;
-
-    default: // "ollama"
-        $aiReply = queryOllama($ollamaUrl, $model, $messagesPayload, $options);
-        break;
-}
+$aiReply = queryOllama($ollamaUrl, $model, $messagesPayload, $options);
 
 if (!empty($aiReply)) {
     // Post-process to remove Chinese characters and hallucinated city names
