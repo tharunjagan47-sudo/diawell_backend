@@ -1,17 +1,22 @@
 <?php
-$host = "localhost";
-$dbname = "diawell";
-$username = "root";
-$password = "";
+require_once __DIR__ . '/db_config.php';
+
+$host = $diawellDbConfig["host"];
+$port = $diawellDbConfig["port"];
+$dbname = $diawellDbConfig["db_name"];
+$username = $diawellDbConfig["username"];
+$password = $diawellDbConfig["password"];
+$charset = $diawellDbConfig["charset"];
 
 try {
     $pdo = new PDO(
-        "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
+        "mysql:host={$host};port={$port};dbname={$dbname};charset={$charset}",
         $username,
         $password,
         [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false
         ]
     );
 } catch (PDOException $e) {
@@ -22,7 +27,8 @@ try {
     }
     echo json_encode([
         "success" => false,
-        "message" => "Database connection failed. Please ensure MySQL is running in XAMPP."
-    ]);
+        "status" => "error",
+        "message" => "Database connection failed. Please ensure MySQL is running."
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
