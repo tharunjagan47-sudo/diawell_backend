@@ -1,4 +1,6 @@
 <?php
+@ini_set("display_errors", "0");
+@ini_set("html_errors", "0");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, DELETE");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-User-Id");
@@ -86,13 +88,15 @@ if (preg_match('/^(bye|goodbye|see\s*you|tata|good\s*night)($|\s)/i', $cleanAlph
 // 2. Fetch Live MySQL Records & Merge with client patient_context
 $pdo = null;
 try {
+    require_once __DIR__ . '/../config/db_config.php';
     $pdo = new PDO(
-        "mysql:host=localhost;dbname=diawell;charset=utf8mb4",
-        "root",
-        "",
+        "mysql:host={$diawellDbConfig['host']};port={$diawellDbConfig['port']};dbname={$diawellDbConfig['db_name']};charset={$diawellDbConfig['charset']}",
+        $diawellDbConfig["username"],
+        $diawellDbConfig["password"],
         [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
             PDO::ATTR_TIMEOUT => 2
         ]
     );
