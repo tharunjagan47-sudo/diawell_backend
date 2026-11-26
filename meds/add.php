@@ -7,7 +7,10 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
 }
 
 $data = getRequestData();
-$userId = getUserId($data) ?: 1;
+$userId = getUserId($data);
+if (!$userId) {
+    respond(false, "User not specified. Please provide user_id or log in.", 401);
+}
 
 $name = trim($data["name"] ?? $data["medication_name"] ?? $data["medicationName"] ?? "");
 $dose = trim($data["dose"] ?? $data["medication_dose"] ?? $data["medicationDose"] ?? "500 mg • 1 Tablet");
