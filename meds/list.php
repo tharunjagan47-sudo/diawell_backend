@@ -6,7 +6,10 @@ if ($_SERVER["REQUEST_METHOD"] !== "GET") {
     respond(false, "Method not allowed. Use GET.", 405);
 }
 
-$userId = getUserId() ?: 1;
+$userId = getUserId();
+if (!$userId) {
+    respond(false, "User not specified. Please provide user_id or log in.", 401);
+}
 
 $rawDate = trim($_GET["date"] ?? date("Y-m-d"));
 $parsed = strtotime($rawDate);
