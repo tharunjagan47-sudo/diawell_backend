@@ -16,7 +16,7 @@ if ($method === "GET") {
 
     try {
         $stmt = $pdo->prepare(
-            "SELECT id, user_id, health_focus, dietary_preferences, allergies, activity_level, updated_at 
+            "SELECT id, user_id, blood_group, health_focus, dietary_preferences, allergies, activity_level, updated_at 
              FROM health_preferences 
              WHERE user_id = :user_id 
              LIMIT 1"
@@ -24,10 +24,20 @@ if ($method === "GET") {
         $stmt->execute([":user_id" => $userId]);
         $pref = $stmt->fetch();
 
+        // Also check fallback in users table
+        $userBloodGroup = null;
+        try {
+            $uStmt = $pdo->prepare("SELECT blood_group FROM users WHERE id = :id LIMIT 1");
+            $uStmt->execute([":id" => $userId]);
+            $uRow = $uStmt->fetch();
+            $userBloodGroup = $uRow["blood_group"] ?? null;
+        } catch (Throwable $_) {}
+
         if (!$pref) {
             // Return defaults matching HealthPreferencesScreen.kt UI initial state
             respond(true, "No saved health preferences found; returning default options.", 200, [
                 "user_id" => $userId,
+                "blood_group" => $userBloodGroup ?: "O+",
                 "health_focus" => "Glucose Control",
                 "dietary_preferences" => ["Non-Vegetarian", "Low-Carb / Keto"],
                 "allergies" => ["Nuts"],
@@ -36,9 +46,12 @@ if ($method === "GET") {
             ]);
         }
 
+        $bloodGroupVal = !empty($pref["blood_group"]) ? $pref["blood_group"] : ($userBloodGroup ?: "O+");
+
         respond(true, "Health preferences retrieved successfully.", 200, [
             "id" => (int) $pref["id"],
             "user_id" => (int) $pref["user_id"],
+            "blood_group" => $bloodGroupVal,
             "health_focus" => $pref["health_focus"],
             "dietary_preferences" => decodeDbJson($pref["dietary_preferences"]),
             "allergies" => decodeDbJson($pref["allergies"]),
@@ -64,6 +77,7 @@ if ($method === "POST") {
         respond(false, "User not specified. Please provide user_id or log in first.", 401);
     }
 
+    $blood_group = trim($data["blood_group"] ?? $data["selectedBloodGroup"] ?? "O+");
     $health_focus = trim($data["health_focus"] ?? $data["selectedHealthFocus"] ?? "Glucose Control");
     $dietary_preferences = $data["dietary_preferences"] ?? $data["selectedDiets"] ?? [];
     $allergies = $data["allergies"] ?? $data["allergiesList"] ?? [];
@@ -92,9 +106,10 @@ if ($method === "POST") {
         }
 
         // Upsert into health_preferences table
-        $sql = "INSERT INTO health_preferences (user_id, health_focus, dietary_preferences, allergies, activity_level)
-                VALUES (:user_id, :health_focus, :dietary_preferences, :allergies, :activity_level)
+        $sql = "INSERT INTO health_preferences (user_id, blood_group, health_focus, dietary_preferences, allergies, activity_level)
+                VALUES (:user_id, :blood_group, :health_focus, :dietary_preferences, :allergies, :activity_level)
                 ON DUPLICATE KEY UPDATE
+                    blood_group = VALUES(blood_group),
                     health_focus = VALUES(health_focus),
                     dietary_preferences = VALUES(dietary_preferences),
                     allergies = VALUES(allergies),
@@ -104,14 +119,27 @@ if ($method === "POST") {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             ":user_id" => $userId,
+            ":blood_group" => $blood_group,
             ":health_focus" => $health_focus,
             ":dietary_preferences" => $dietaryJson,
             ":allergies" => $allergiesJson,
             ":activity_level" => $activity_level
         ]);
 
+        // Also update users table for cross-module sync (PDF report, profile)
+        if (!empty($blood_group)) {
+            try {
+                $uUpdate = $pdo->prepare("UPDATE users SET blood_group = :blood_group WHERE id = :id");
+                $uUpdate->execute([
+                    ":blood_group" => $blood_group,
+                    ":id" => $userId
+                ]);
+            } catch (Throwable $_) {}
+        }
+
         respond(true, "Health preferences saved successfully.", 200, [
             "user_id" => $userId,
+            "blood_group" => $blood_group,
             "health_focus" => $health_focus,
             "dietary_preferences" => decodeDbJson($dietaryJson),
             "allergies" => decodeDbJson($allergiesJson),
